@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "1082826789172",
+    "project_id": "murilo-21h52m",
+    "storage_bucket": "murilo-21h52m.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:1082826789172:android:ec3446a0b183cd75369561",
+        "android_client_info": {
+          "package_name": "com.example.lego"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyCIdG0tJX8LOs3yvWLO-3wFm5ISsrMerLw"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
