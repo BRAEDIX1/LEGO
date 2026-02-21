@@ -94,6 +94,8 @@ class LancamentosRepository {
     String? lote,
     double? volume,
     TipoRegistro? registro,
+    String? localizacaoId,
+    String? localizacaoNome,
   }) async {
     final box = await _openBox();
     final idLocal = const Uuid().v4();
@@ -144,6 +146,8 @@ class LancamentosRepository {
       volume: volume,
       inventarioId: inventarioId,
       contagemId: contagemId,
+      localizacaoId:   localizacaoId,
+      localizacaoNome: localizacaoNome,
     );
 
     await box.put(idLocal, lanc);
@@ -238,6 +242,8 @@ class LancamentosRepository {
         double? volume,
         String? inventarioId,
         String? contagemId,
+        String? localizacaoId,
+        String? localizacaoNome,
       }) async {
     final box = await _openBox();
     final current = _getByIdLocalSync(box, idLocal);
@@ -262,6 +268,8 @@ class LancamentosRepository {
       volume: volume ?? current.volume,
       inventarioId: inventarioId ?? current.inventarioId,
       contagemId: contagemId ?? current.contagemId,
+      localizacaoId:   localizacaoId   ?? current.localizacaoId,
+      localizacaoNome: localizacaoNome ?? current.localizacaoNome,
     );
 
     await box.put(idLocal, updated);

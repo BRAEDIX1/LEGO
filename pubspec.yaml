@@ -10,24 +10,24 @@ dependencies:
   flutter:
     sdk: flutter
 
-  # Firebase (versões estáveis compatíveis com o seu projeto)
-  firebase_core: ^3.4.0
-  firebase_auth: ^5.3.0
-  cloud_firestore: ^5.4.0
+  # Firebase (versões atualizadas para melhor compatibilidade)
+  firebase_core: ^4.4.0
+  firebase_auth: ^6.1.4
+  cloud_firestore: ^6.1.2
 
   # Offline-first
   hive: ^2.2.3
   hive_flutter: ^1.1.0
   connectivity_plus: ^6.0.3
   path_provider: ^2.1.5
-  shared_preferences: ^2.2.2  # ADICIONE ESTA LINHA
+  shared_preferences: ^2.2.2
 
   # Util
   archive: ^3.4.10
   intl: ^0.20.2
   uuid: ^4.5.1
   flutter_secure_storage: ^9.2.2
-  diacritic: ^0.1.5  # Adicionado para normalização de acentos
+  diacritic: ^0.1.5
 
   file_picker: ^8.0.0
   excel: ^4.0.6

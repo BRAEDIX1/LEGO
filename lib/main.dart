@@ -4,12 +4,14 @@ import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive_flutter/hive_flutter.dart';
+import 'package:hive/hive.dart';
 
 import 'package:lego/data/local/hive_boxes.dart';
-import 'package:lego/services/mobile_sync_service.dart';  // ⭐ FASE 5
+import 'package:lego/services/mobile_sync_service.dart';
 import 'package:lego/ui/home_page.dart';
 import 'package:lego/ui/login_page.dart';
-import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';  // ⭐ FASE 5
+import 'package:lego/ui/first_sync_screen.dart';
+import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -23,9 +25,6 @@ Future<void> main() async {
   // Hive
   await Hive.initFlutter();
   HiveBoxes.ensureAdapters();
-
-  // ⭐ FASE 5: Inicializa serviço de sincronização mobile
-  // (será carregado após login, quando tivermos usuário)
 
   runApp(const MyApp());
 }
@@ -43,9 +42,9 @@ class MyApp extends StatelessWidget {
         useMaterial3: true,
       ),
       routes: {
-        '/login': (context) => const LoginPage(),
-        '/home': (context) => const HomePage(),
-        '/modo_operacao': (context) => const ModoOperacaoScreen(),  // ⭐ FASE 5
+        '/login':         (context) => const LoginPage(),
+        '/home':          (context) => const HomePage(),
+        '/modo_operacao': (context) => const ModoOperacaoScreen(),
       },
       home: const _Bootstrapper(),
     );
@@ -56,6 +55,17 @@ class MyApp extends StatelessWidget {
 class _Bootstrapper extends StatelessWidget {
   const _Bootstrapper();
 
+  /// Verifica se o seed inicial já foi feito (mesma lógica do login_page.dart)
+  Future<bool> _checkNeedsSync() async {
+    try {
+      final state   = await Hive.openBox('app_state');
+      final seedDone = state.get('seed_v1_done') == true;
+      return !seedDone;
+    } catch (e) {
+      return true; // Em caso de erro, assume que precisa sincronizar
+    }
+  }
+
   Future<Widget> _decideStartPage() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
@@ -65,10 +75,16 @@ class _Bootstrapper extends StatelessWidget {
     try {
       // Abre boxes do usuário
       await HiveBoxes.openUserLancamentos(user.uid);
-      
-      // ⭐ FASE 5: Inicializa serviço de sincronização
+
+      // ⭐ Verifica se o seed já foi feito
+      final needsSync = await _checkNeedsSync();
+      if (needsSync) {
+        return const FirstSyncScreen();
+      }
+
+      // Seed já feito — inicializa serviço e vai para home
       await MobileSyncService().inicializar();
-      
+
     } catch (e) {
       debugPrint('Falha na inicialização: $e');
       return const LoginPage();

@@ -1,5 +1,4 @@
-import 'package:lego/widgets/planta_navegador_widget.dart';
-import 'package:lego/config/planta_diadema_config.dart';
+import 'package:lego/ui/mobile/screens/plant_map_page.dart';
 import 'package:lego/services/inventario_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
@@ -29,6 +28,8 @@ class _Lancamento {
   final String tag;
   final DateTime hora;
   final TipoRegistro registro;
+  final String? localizacaoId;
+  final String? localizacaoNome;
 
   const _Lancamento({
     required this.status,
@@ -43,6 +44,8 @@ class _Lancamento {
     required this.tag,
     required this.hora,
     required this.registro,
+    this.localizacaoId,
+    this.localizacaoNome,
   });
 
   _Lancamento copyWith({
@@ -58,23 +61,30 @@ class _Lancamento {
     String? tag,
     DateTime? hora,
     TipoRegistro? registro,
+    Object? localizacaoId  = const _Unset(),
+    Object? localizacaoNome = const _Unset(),
   }) {
     return _Lancamento(
-      status: status ?? this.status,
-      codigo: codigo ?? this.codigo,
-      descricao: descricao ?? this.descricao,
-      unidade: unidade ?? this.unidade,
-      quantidade: quantidade ?? this.quantidade,
-      prateleira: prateleira ?? this.prateleira,
-      cheio: cheio ?? this.cheio,
-      vazio: vazio ?? this.vazio,
-      lote: lote ?? this.lote,
-      tag: tag ?? this.tag,
-      hora: hora ?? this.hora,
-      registro: registro ?? this.registro,
+      status:          status    ?? this.status,
+      codigo:          codigo    ?? this.codigo,
+      descricao:       descricao ?? this.descricao,
+      unidade:         unidade   ?? this.unidade,
+      quantidade:      quantidade ?? this.quantidade,
+      prateleira:      prateleira ?? this.prateleira,
+      cheio:           cheio  ?? this.cheio,
+      vazio:           vazio  ?? this.vazio,
+      lote:            lote   ?? this.lote,
+      tag:             tag    ?? this.tag,
+      hora:            hora   ?? this.hora,
+      registro:        registro ?? this.registro,
+      localizacaoId:   localizacaoId   is _Unset ? this.localizacaoId   : localizacaoId   as String?,
+      localizacaoNome: localizacaoNome is _Unset ? this.localizacaoNome : localizacaoNome as String?,
     );
   }
 }
+
+// Sentinel para distinguir "não passou" de "passou null" no copyWith
+class _Unset { const _Unset(); }
 
 class _LancamentoDoc {
   final String id;
@@ -781,11 +791,11 @@ class _FormPane extends StatelessWidget {
                 controller: codigoCtrl,
                 focusNode: codigoFocus,
                 enabled: codigoEnabled,
-                maxLength: 10,
+                maxLength: 8,
                 decoration: _dec(
                   context,
                   label: 'Código',
-                  hint: '10 dígitos',
+                  hint: '8 dígitos',
                   suffix: IconButton(
                     tooltip: 'Buscar',
                     onPressed: onBuscar,
@@ -1233,11 +1243,17 @@ String _fmtQtde(double v) {
 }
 
 Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosRepository repo) async {
-  final qtdCtrl = TextEditingController(text: doc.data.quantidade.toString());
-  final endCtrl = TextEditingController(text: doc.data.prateleira);
-  final cheioCtrl = TextEditingController(text: doc.data.cheio.toString());
-  final vazioCtrl = TextEditingController(text: doc.data.vazio.toString());
+  // Cheio e vazio são sempre inteiros (cilindros não têm fração)
+  final qtdCtrl   = TextEditingController(text: doc.data.quantidade == doc.data.quantidade.truncateToDouble()
+      ? doc.data.quantidade.toInt().toString()
+      : doc.data.quantidade.toString());
+  final endCtrl   = TextEditingController(text: doc.data.prateleira);
+  final cheioCtrl = TextEditingController(text: doc.data.cheio.toInt().toString());
+  final vazioCtrl = TextEditingController(text: doc.data.vazio.toInt().toString());
   final loteCtrl = TextEditingController(text: doc.data.lote);
+  // ⭐ Localização editável
+  String? localizacaoId   = doc.data.localizacaoId;
+  String? localizacaoNome = doc.data.localizacaoNome;
 
   double _parsePos(String s) {
     final v = double.tryParse(s.replaceAll(',', '.')) ?? 0.0;
@@ -1313,6 +1329,65 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
               ],
             ),
             const SizedBox(height: 12),
+            // ⭐ Campo de localização
+            StatefulBuilder(
+              builder: (ctx2, setStateLocal) {
+                return InkWell(
+                  onTap: () async {
+                    final area = await Navigator.of(ctx).push<PlantArea>(
+                      MaterialPageRoute(
+                        builder: (_) => const PlantMapPage(
+                          jsonAsset: 'assets/plantas/PLANTA_ATUAL_DE_DIADEMA_areas.json',
+                        ),
+                      ),
+                    );
+                    if (area != null) {
+                      setStateLocal(() {
+                        localizacaoId   = area.id;
+                        localizacaoNome = area.nome;
+                      });
+                    }
+                  },
+                  borderRadius: BorderRadius.circular(8),
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      border: Border.all(
+                        color: localizacaoId != null ? Colors.green : Colors.grey,
+                      ),
+                      borderRadius: BorderRadius.circular(8),
+                      color: localizacaoId != null
+                          ? Colors.green.withOpacity(0.05)
+                          : null,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(
+                          Icons.location_on,
+                          size: 18,
+                          color: localizacaoId != null ? Colors.green : Colors.grey,
+                        ),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            localizacaoNome?.replaceAll('_', ' ') ??
+                                localizacaoId ??
+                                'Toque para alterar localização',
+                            style: TextStyle(
+                              color: localizacaoId != null
+                                  ? Colors.green.shade800
+                                  : Colors.grey,
+                            ),
+                          ),
+                        ),
+                        const Icon(Icons.edit_location, size: 16, color: Colors.grey),
+                      ],
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -1329,7 +1404,9 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
                           cheio: ch,
                           vazio: vz,
                           lote: loteCtrl.text.trim(),
-                          registro: doc.data.registro,  // ADICIONAR ESTA LINHA
+                          registro: doc.data.registro,
+                          localizacaoId:   localizacaoId,
+                          localizacaoNome: localizacaoNome,
                         ),
                       );
                     },
@@ -1350,11 +1427,13 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
     try {
       await repo.updatePartial(
         doc.id,
-        quantidade: edited.quantidade,
-        prateleira: edited.prateleira,
-        cheio: edited.cheio,
-        vazio: edited.vazio,
-        lote: edited.lote,
+        quantidade:      edited.quantidade,
+        prateleira:      edited.prateleira,
+        cheio:           edited.cheio,
+        vazio:           edited.vazio,
+        lote:            edited.lote,
+        localizacaoId:   edited.localizacaoId,
+        localizacaoNome: edited.localizacaoNome,
       );
       ScaffoldMessenger.of(context)
           .showSnackBar(const SnackBar(content: Text('Lançamento atualizado')));
@@ -1661,7 +1740,12 @@ class _HomePageState extends State<HomePage> {
   String? _codigoInventario;
   String? _nomeParticipante;
   String? _statusContagem;
-  String? _localizacaoGeo;
+  String? _localizacaoId;    // ⭐ ID da área (ex: ENCHIMENTO_OXIGENIO)
+  String? _localizacaoNome;  // ⭐ Nome da área para exibição
+  DateTime? _localizacaoSetadaEm; // ⭐ Momento em que a localização foi setada
+
+  // Tempo máximo de validade da localização (minutos)
+  static const int _localizacaoTimeoutMin = 10;
   int _totalLancamentos = 0;
   bool _podeContar = false;
   bool _aguardandoLiberacao = false;
@@ -1731,24 +1815,29 @@ class _HomePageState extends State<HomePage> {
   }
 
   Future<void> _abrirSeletorLocalizacao() async {
-    final resultado = await showModalBottomSheet<LocalizacaoSelecionada>(
-      context: context,
-      isScrollControlled: true,
-      useSafeArea: true,
-      isDismissible: false,
-      enableDrag: false,
-      builder: (context) => PlantaNavegadorWidget(
-        localizacaoAtual: _localizacaoGeo,
+    final area = await Navigator.of(context).push<PlantArea>(
+      MaterialPageRoute(
+        builder: (_) => const PlantMapPage(
+          jsonAsset: 'assets/plantas/PLANTA_ATUAL_DE_DIADEMA_areas.json',
+        ),
       ),
     );
 
-    if (resultado != null) {
+    if (area != null && mounted) {
       setState(() {
-        _localizacaoGeo = resultado.pathCompleto;
+        _localizacaoId        = area.id;
+        _localizacaoNome      = area.nome;
+        _localizacaoSetadaEm  = DateTime.now(); // ⭐ inicia o timer
       });
-
-      debugPrint('✅ Localização selecionada: $_localizacaoGeo');
+      debugPrint('✅ Localização selecionada: \${area.id}');
     }
+  }
+
+  // Verifica se a localização ainda está dentro do prazo de validade
+  bool _localizacaoValida() {
+    if (_localizacaoId == null || _localizacaoSetadaEm == null) return false;
+    final diferenca = DateTime.now().difference(_localizacaoSetadaEm!);
+    return diferenca.inMinutes < _localizacaoTimeoutMin;
   }
 
   // ⭐ ADICIONAR ESTE MÉTODO COMPLETO
@@ -2011,14 +2100,24 @@ class _HomePageState extends State<HomePage> {
   void _onCodigoChanged() {
     _debounce?.cancel();
     final codigo = _codigoCtrl.text.trim();
+
+    // Trunca automaticamente se ultrapassar 8 dígitos
+    if (codigo.length > 8) {
+      _codigoCtrl.text = codigo.substring(0, 8);
+      _codigoCtrl.selection = TextSelection.collapsed(offset: 8);
+      return;
+    }
+
+    // Busca automática ao completar 8 dígitos
     if (codigo.length == 8) {
-      _debounce = Timer(const Duration(milliseconds: 100), () {
+      _debounce = Timer(const Duration(milliseconds: 300), () {
         _buscarProduto();
       });
     }
   }
 
   Timer? _debounce;
+
   void _onBarrasChanged() {
     _debounce?.cancel();
     final tag = _barrasCtrl.text;
@@ -2098,6 +2197,8 @@ class _HomePageState extends State<HomePage> {
           return;
         }
 
+        // Usuário cancelou — limpa o campo para nova digitação sem interferência
+        _codigoCtrl.clear();
         setState(() {
           _descricao = null;
           _unidade = null;
@@ -2105,7 +2206,7 @@ class _HomePageState extends State<HomePage> {
           _viaTag = false;
           _viaCodigo = false;
         });
-        _snack('Produto não encontrado no aparelho', error: true);
+        _snack('Produto não encontrado. Digite o código novamente.', error: true);
         _codigoFocus.requestFocus();
         return;
       }
@@ -2212,6 +2313,8 @@ class _HomePageState extends State<HomePage> {
           return;
         }
 
+        // Usuário cancelou — limpa o campo para nova digitação
+        _barrasCtrl.clear();
         setState(() {
           _descricao = null;
           _unidade = null;
@@ -2220,7 +2323,7 @@ class _HomePageState extends State<HomePage> {
           _viaCodigo = false;
         });
         debugPrint('Tag não encontrada');
-        _snack('Tag não encontrada no aparelho', error: true);
+        _snack('Tag não encontrada. Digite a tag novamente.', error: true);
         _barrasFocus.requestFocus();
         return;
       }
@@ -2306,6 +2409,8 @@ class _HomePageState extends State<HomePage> {
         tag: resultado['tag'],
         volume: resultado['volume'],
         registro: TipoRegistro.manual,
+        localizacaoId:   _localizacaoId,    // ⭐ LOCALIZAÇÃO
+        localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
       );
 
       _snack('Produto cadastrado e lançado manualmente');
@@ -2361,6 +2466,22 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _confirmar() async {
     if (_isSubmitting) return;
+
+    // ⭐ Bloquear se localização não selecionada ou expirada
+    if (!_localizacaoValida()) {
+      setState(() {
+        _localizacaoId       = null;
+        _localizacaoNome     = null;
+        _localizacaoSetadaEm = null;
+      });
+      _snack(
+        _localizacaoId == null
+            ? 'Selecione uma localização antes de lançar'
+            : 'Localização expirada. Confirme onde você está.',
+        error: true,
+      );
+      return;
+    }
 
     // Validação ajustada: verificar flags ao invés dos campos diretamente
     // porque quando via TAG, o código é preenchido automaticamente
@@ -2424,6 +2545,8 @@ class _HomePageState extends State<HomePage> {
         tag: tag.isEmpty ? null : tag,      // ✅ Null se vazio
         volume: null,
         registro: TipoRegistro.automatico,
+        localizacaoId:   _localizacaoId,    // ⭐ LOCALIZAÇÃO
+        localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
       );
 
       debugPrint('Lançamento registrado com sucesso no Hive');
@@ -2606,10 +2729,10 @@ class _HomePageState extends State<HomePage> {
     return Container(
       padding: EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: _localizacaoGeo != null ? Colors.green.shade50 : Colors.red.shade50,
+        color: _localizacaoId != null ? Colors.green.shade50 : Colors.red.shade50,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(
-          color: _localizacaoGeo != null ? Colors.green : Colors.red,
+          color: _localizacaoId != null ? Colors.green : Colors.red,
           width: 2,
         ),
       ),
@@ -2619,12 +2742,12 @@ class _HomePageState extends State<HomePage> {
           Row(
             children: [
               Icon(
-                _localizacaoGeo != null ? Icons.check_circle : Icons.warning,
-                color: _localizacaoGeo != null ? Colors.green : Colors.red,
+                _localizacaoId != null ? Icons.check_circle : Icons.warning,
+                color: _localizacaoId != null ? Colors.green : Colors.red,
               ),
               SizedBox(width: 8),
               Text(
-                _localizacaoGeo != null
+                _localizacaoId != null
                     ? '📍 Você está em:'
                     : '⚠️ Selecione sua localização',
                 style: TextStyle(
@@ -2636,9 +2759,30 @@ class _HomePageState extends State<HomePage> {
           ),
           SizedBox(height: 8),
 
-          if (_localizacaoGeo != null) ...[
+          if (_localizacaoId != null) ...[
+            // Tempo restante de validade
+            Builder(builder: (context) {
+              final restante = _localizacaoSetadaEm == null
+                  ? 0
+                  : _localizacaoTimeoutMin -
+                    DateTime.now().difference(_localizacaoSetadaEm!).inMinutes;
+              final valida = _localizacaoValida();
+              return Text(
+                valida
+                    ? '⏱ Válida por mais $restante min'
+                    : '⚠️ Localização expirada',
+                style: TextStyle(
+                  fontSize: 12,
+                  color: valida
+                      ? (restante <= 2 ? Colors.orange : Colors.green.shade700)
+                      : Colors.red,
+                  fontWeight: FontWeight.w500,
+                ),
+              );
+            }),
+            const SizedBox(height: 4),
             Text(
-              _localizacaoGeo!,
+              _localizacaoNome ?? _localizacaoId!,
               style: TextStyle(
                 fontSize: 20,
                 fontWeight: FontWeight.w600,
