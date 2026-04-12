@@ -43,6 +43,8 @@ class LancLocal {
   // ⭐ NOVOS CAMPOS: Localização geográfica (planta)
   @HiveField(21) String? localizacaoId;    // ex: "ENCHIMENTO_OXIGENIO"
   @HiveField(22) String? localizacaoNome;  // ex: "Enchimento de Oxigênio"
+  @HiveField(23) String? comentario;
+  @HiveField(24) String? ordemServico;
 
   LancLocal({
     required this.idLocal,
@@ -68,6 +70,8 @@ class LancLocal {
     this.nomeCompleto,
     this.localizacaoId,    // ⭐ NOVO
     this.localizacaoNome,  // ⭐ NOVO
+    this.comentario,
+    this.ordemServico,
   });
 
   LancLocal copyWith({
@@ -94,6 +98,8 @@ class LancLocal {
     String? nomeCompleto,
     String? localizacaoId,    // ⭐ NOVO
     String? localizacaoNome,  // ⭐ NOVO
+    String? comentario,
+    String? ordemServico,
   }) {
     return LancLocal(
       idLocal:        idLocal        ?? this.idLocal,
@@ -119,6 +125,8 @@ class LancLocal {
       nomeCompleto:   nomeCompleto   ?? this.nomeCompleto,
       localizacaoId:   localizacaoId   ?? this.localizacaoId,    // ⭐ NOVO
       localizacaoNome: localizacaoNome ?? this.localizacaoNome,  // ⭐ NOVO
+      comentario:     comentario     ?? this.comentario,
+      ordemServico:   ordemServico   ?? this.ordemServico,
     );
   }
 }
@@ -146,6 +154,8 @@ extension LancLocalToJson on LancLocal {
       // ⭐ NOVOS: Localização geográfica
       'localizacaoId':   localizacaoId,
       'localizacaoNome': localizacaoNome,
+      'comentario':     comentario,
+      'ordemServico':   ordemServico,
     };
   }
 }

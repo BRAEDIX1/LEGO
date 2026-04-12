@@ -1,9 +1,9 @@
-import 'package:lego/ui/mobile/screens/plant_map_page.dart';
 import 'package:lego/services/inventario_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lego/data/repositories/produtos_repository.dart';
+import 'package:lego/ui/mobile/screens/plant_map_page.dart';
 import 'package:lego/data/repositories/barras_repository.dart';
 import 'package:lego/data/repositories/lancamentos_repository.dart';
 import 'package:lego/data/local/lanc_local.dart';
@@ -30,6 +30,8 @@ class _Lancamento {
   final TipoRegistro registro;
   final String? localizacaoId;
   final String? localizacaoNome;
+  final String? ordemServico;
+  final String? comentario;
 
   const _Lancamento({
     required this.status,
@@ -46,6 +48,8 @@ class _Lancamento {
     required this.registro,
     this.localizacaoId,
     this.localizacaoNome,
+    this.ordemServico,
+    this.comentario,
   });
 
   _Lancamento copyWith({
@@ -63,6 +67,8 @@ class _Lancamento {
     TipoRegistro? registro,
     Object? localizacaoId  = const _Unset(),
     Object? localizacaoNome = const _Unset(),
+    Object? ordemServico = const _Unset(),
+    Object? comentario = const _Unset(),
   }) {
     return _Lancamento(
       status:          status    ?? this.status,
@@ -79,6 +85,8 @@ class _Lancamento {
       registro:        registro ?? this.registro,
       localizacaoId:   localizacaoId   is _Unset ? this.localizacaoId   : localizacaoId   as String?,
       localizacaoNome: localizacaoNome is _Unset ? this.localizacaoNome : localizacaoNome as String?,
+      ordemServico:    ordemServico    is _Unset ? this.ordemServico    : ordemServico    as String?,
+      comentario:      comentario      is _Unset ? this.comentario      : comentario      as String?,
     );
   }
 }
@@ -671,6 +679,7 @@ class _FormPane extends StatelessWidget {
     required this.cheioCtrl,
     required this.vazioCtrl,
     required this.loteCtrl,
+    required this.ordemServicoCtrl,
     required this.codigoFocus,
     required this.barrasFocus,
     required this.qtdFocus,
@@ -678,6 +687,7 @@ class _FormPane extends StatelessWidget {
     required this.cheioFocus,
     required this.vazioFocus,
     required this.loteFocus,
+    required this.ordemServicoFocus,
     required this.descricao,
     required this.unidade,
     required this.onBuscar,
@@ -704,6 +714,7 @@ class _FormPane extends StatelessWidget {
   final TextEditingController cheioCtrl;
   final TextEditingController vazioCtrl;
   final TextEditingController loteCtrl;
+  final TextEditingController ordemServicoCtrl;
   final FocusNode codigoFocus;
   final FocusNode barrasFocus;
   final FocusNode qtdFocus;
@@ -711,6 +722,7 @@ class _FormPane extends StatelessWidget {
   final FocusNode cheioFocus;
   final FocusNode vazioFocus;
   final FocusNode loteFocus;
+  final FocusNode ordemServicoFocus;
   final String? descricao;
   final String? unidade;
   final VoidCallback onBuscar;
@@ -937,6 +949,20 @@ class _FormPane extends StatelessWidget {
                 enabled: loteEnabled,
                 maxLength: 10,
                 decoration: _dec(context, label: 'Lote'),
+                textInputAction: TextInputAction.next,
+                style: const TextStyle(fontSize: 12),
+                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+              ),
+            ),
+            const SizedBox(width: 8),
+            // OS (mesma largura do Lote)
+            Expanded(
+              child: TextFormField(
+                controller: ordemServicoCtrl,
+                focusNode: ordemServicoFocus,
+                maxLength: 10,
+                decoration: _dec(context, label: 'OS'),
+                textCapitalization: TextCapitalization.characters,
                 textInputAction: TextInputAction.done,
                 onFieldSubmitted: (_) => onConfirmar(),
                 style: const TextStyle(fontSize: 12),
@@ -1089,6 +1115,20 @@ class _FormPane extends StatelessWidget {
         enabled: loteEnabled,
         maxLength: 10,
         decoration: _dec(context, label: 'Lote'),
+        textInputAction: TextInputAction.next,
+        style: const TextStyle(fontSize: 12),
+        buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+      ),
+    );
+
+    final ordemServico = ConstrainedBox(
+      constraints: const BoxConstraints(maxWidth: _wLote),
+      child: TextFormField(
+        controller: ordemServicoCtrl,
+        focusNode: ordemServicoFocus,
+        maxLength: 10,
+        decoration: _dec(context, label: 'OS'),
+        textCapitalization: TextCapitalization.characters,
         textInputAction: TextInputAction.done,
         onFieldSubmitted: (_) => onConfirmar(),
         style: const TextStyle(fontSize: 12),
@@ -1170,6 +1210,7 @@ class _FormPane extends StatelessWidget {
             vazio,
             endereco,
             lote,
+            ordemServico,
             confirm,
           ],
         ),
@@ -1225,6 +1266,8 @@ class _LancamentosPane extends StatelessWidget {
               tag: m.tag ?? '',
               hora: m.createdAtLocal,
               registro: m.registro,  // ADICIONAR ESTA LINHA
+              ordemServico: m.ordemServico,
+              comentario:   m.comentario,
             ),
           );
         }).toList();
@@ -1251,6 +1294,8 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
   final cheioCtrl = TextEditingController(text: doc.data.cheio.toInt().toString());
   final vazioCtrl = TextEditingController(text: doc.data.vazio.toInt().toString());
   final loteCtrl = TextEditingController(text: doc.data.lote);
+  final ordemServicoCtrl = TextEditingController(text: doc.data.ordemServico ?? '');
+  final comentarioCtrl  = TextEditingController(text: doc.data.comentario ?? '');
   // ⭐ Localização editável
   String? localizacaoId   = doc.data.localizacaoId;
   String? localizacaoNome = doc.data.localizacaoNome;
@@ -1283,6 +1328,14 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
                   child: TextField(
                     controller: loteCtrl,
                     decoration: const InputDecoration(labelText: 'Lote'),
+                    textCapitalization: TextCapitalization.characters,
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: TextField(
+                    controller: ordemServicoCtrl,
+                    decoration: const InputDecoration(labelText: 'OS'),
                     textCapitalization: TextCapitalization.characters,
                   ),
                 ),
@@ -1388,6 +1441,18 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
               },
             ),
             const SizedBox(height: 12),
+            TextField(
+              controller: comentarioCtrl,
+              decoration: const InputDecoration(
+                labelText: 'Comentário',
+                hintText: 'Observação opcional...',
+                border: OutlineInputBorder(),
+              ),
+              maxLines: 3,
+              maxLength: 300,
+              textCapitalization: TextCapitalization.sentences,
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -1404,6 +1469,8 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
                           cheio: ch,
                           vazio: vz,
                           lote: loteCtrl.text.trim(),
+                          ordemServico: ordemServicoCtrl.text.trim().isEmpty ? null : ordemServicoCtrl.text.trim(),
+                          comentario:   comentarioCtrl.text.trim().isEmpty  ? null : comentarioCtrl.text.trim(),
                           registro: doc.data.registro,
                           localizacaoId:   localizacaoId,
                           localizacaoNome: localizacaoNome,
@@ -1432,6 +1499,8 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
         cheio:           edited.cheio,
         vazio:           edited.vazio,
         lote:            edited.lote,
+        ordemServico:    edited.ordemServico,
+        comentario:      edited.comentario,
         localizacaoId:   edited.localizacaoId,
         localizacaoNome: edited.localizacaoNome,
       );
@@ -1614,7 +1683,10 @@ class _LancamentosListAndTable extends StatelessWidget {
           final it = itens[i];
 
           final linha1 = '${it.data.tag} • ${it.data.descricao}';
-          final linha2 = 'Código: ${it.data.codigo} • Unid: ${it.data.unidade} • Lote: ${it.data.lote}';
+          final ordemStr = (it.data.ordemServico != null && it.data.ordemServico!.isNotEmpty)
+              ? ' • OS: \${it.data.ordemServico}'
+              : '';
+          final linha2 = 'Código: \${it.data.codigo} • Unid: \${it.data.unidade} • Lote: \${it.data.lote}\$ordemStr';
           final linha3 =
               'Prat: ${it.data.prateleira} • Vazio: ${_fmtQtde(it.data.vazio)} • Cheio: ${_fmtQtde(it.data.cheio)} • Qtde: ${_fmtQtde(it.data.quantidade)}';
           final linha4 = _fmtHora(it.data.hora);
@@ -1714,6 +1786,7 @@ class _HomePageState extends State<HomePage> {
   final _cheioCtrl = TextEditingController();
   final _vazioCtrl = TextEditingController();
   final _loteCtrl = TextEditingController();
+  final _ordemServicoCtrl = TextEditingController();
   final _codigoFocus = FocusNode();
   final _barrasFocus = FocusNode();
   final _qtdFocus = FocusNode();
@@ -1721,6 +1794,7 @@ class _HomePageState extends State<HomePage> {
   final _cheioFocus = FocusNode();
   final _vazioFocus = FocusNode();
   final _loteFocus = FocusNode();
+  final _ordemServicoFocus = FocusNode();
   final _listScroll = ScrollController();
   final _tagQueue = Queue<String>();
   final _cache = <String, Map<String, dynamic>>{};
@@ -2140,6 +2214,7 @@ class _HomePageState extends State<HomePage> {
     _cheioCtrl.dispose();
     _vazioCtrl.dispose();
     _loteCtrl.dispose();
+    _ordemServicoCtrl.dispose();
     _codigoFocus.dispose();
     _barrasFocus.dispose();
     _qtdFocus.dispose();
@@ -2147,6 +2222,7 @@ class _HomePageState extends State<HomePage> {
     _cheioFocus.dispose();
     _vazioFocus.dispose();
     _loteFocus.dispose();
+    _ordemServicoFocus.dispose();
     _listScroll.dispose();
     super.dispose();
   }
@@ -2424,6 +2500,7 @@ class _HomePageState extends State<HomePage> {
       _cheioCtrl.clear();
       _vazioCtrl.clear();
       _loteCtrl.clear();
+      _ordemServicoCtrl.clear();
       setState(() {
         _descricao = null;
         _unidade = null;
@@ -2519,6 +2596,7 @@ class _HomePageState extends State<HomePage> {
 
     final endereco = _enderecoCtrl.text.trim().toUpperCase();
     final lote = _loteCtrl.text.trim();
+    final ordemServico = _ordemServicoCtrl.text.trim();
 
     debugPrint('Registrando lançamento: codigo=$codigo, tag=$tag, qtd=$qtd, endereco=$endereco, cheio=$cheio, vazio=$vazio, lote=$lote, coleção=$_colecaoEncontrada');
     debugPrint('===== DEBUG TAG =====');
@@ -2547,6 +2625,7 @@ class _HomePageState extends State<HomePage> {
         registro: TipoRegistro.automatico,
         localizacaoId:   _localizacaoId,    // ⭐ LOCALIZAÇÃO
         localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
+        ordemServico: ordemServico.isEmpty ? null : ordemServico,
       );
 
       debugPrint('Lançamento registrado com sucesso no Hive');
@@ -3000,6 +3079,7 @@ class _HomePageState extends State<HomePage> {
                           cheioCtrl: _cheioCtrl,
                           vazioCtrl: _vazioCtrl,
                           loteCtrl: _loteCtrl,
+                          ordemServicoCtrl: _ordemServicoCtrl,
                           codigoFocus: _codigoFocus,
                           barrasFocus: _barrasFocus,
                           qtdFocus: _qtdFocus,
@@ -3007,6 +3087,7 @@ class _HomePageState extends State<HomePage> {
                           cheioFocus: _cheioFocus,
                           vazioFocus: _vazioFocus,
                           loteFocus: _loteFocus,
+                          ordemServicoFocus: _ordemServicoFocus,
                           descricao: _descricao,
                           unidade: _unidade,
                           onBuscar: _buscarProduto,
@@ -3116,6 +3197,7 @@ class _HomePageState extends State<HomePage> {
                   cheioCtrl: _cheioCtrl,
                   vazioCtrl: _vazioCtrl,
                   loteCtrl: _loteCtrl,
+                  ordemServicoCtrl: _ordemServicoCtrl,
                   codigoFocus: _codigoFocus,
                   barrasFocus: _barrasFocus,
                   qtdFocus: _qtdFocus,
@@ -3123,6 +3205,7 @@ class _HomePageState extends State<HomePage> {
                   cheioFocus: _cheioFocus,
                   vazioFocus: _vazioFocus,
                   loteFocus: _loteFocus,
+                  ordemServicoFocus: _ordemServicoFocus,
                   descricao: _descricao,
                   unidade: _unidade,
                   onBuscar: _buscarProduto,

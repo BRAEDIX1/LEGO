@@ -1,5 +1,3 @@
-// lib/data/repositories/lancamentos_repository.dart
-import 'dart:async';
 import 'dart:io';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:hive/hive.dart';
@@ -10,6 +8,8 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lego/services/user_service.dart';
 import 'package:lego/data/local/lanc_local.dart';
 import 'package:path_provider/path_provider.dart';
+// lib/data/repositories/lancamentos_repository.dart
+import 'dart:async';
 
 class LancamentosRepository {
   static const int MAX_VISIBLE_RECORDS = 50;
@@ -96,6 +96,8 @@ class LancamentosRepository {
     TipoRegistro? registro,
     String? localizacaoId,
     String? localizacaoNome,
+    String? comentario,
+    String? ordemServico,
   }) async {
     final box = await _openBox();
     final idLocal = const Uuid().v4();
@@ -148,6 +150,8 @@ class LancamentosRepository {
       contagemId: contagemId,
       localizacaoId:   localizacaoId,
       localizacaoNome: localizacaoNome,
+      comentario:   comentario,
+      ordemServico: ordemServico,
     );
 
     await box.put(idLocal, lanc);
@@ -244,6 +248,8 @@ class LancamentosRepository {
         String? contagemId,
         String? localizacaoId,
         String? localizacaoNome,
+        String? comentario,
+        String? ordemServico,
       }) async {
     final box = await _openBox();
     final current = _getByIdLocalSync(box, idLocal);
@@ -270,6 +276,8 @@ class LancamentosRepository {
       contagemId: contagemId ?? current.contagemId,
       localizacaoId:   localizacaoId   ?? current.localizacaoId,
       localizacaoNome: localizacaoNome ?? current.localizacaoNome,
+      comentario:     comentario     ?? current.comentario,
+      ordemServico:   ordemServico   ?? current.ordemServico,
     );
 
     await box.put(idLocal, updated);

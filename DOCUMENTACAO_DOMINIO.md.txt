@@ -1,0 +1,92 @@
+## 🎯 Propósito do Sistema
+
+Este sistema existe para substituir contagens manuais realizadas em papel, 
+eliminando erros de escrita e cálculos manuais.
+
+Seu objetivo é agilizar o processo de inventário, entregando resultados:
+- rápidos
+- confiáveis
+- auditáveis
+
+Permitindo comparações entre contagens e localização rápida de divergências.
+
+Se o sistema deixar de existir, o processo retorna para folhas de papel,
+com perda de tempo, aumento de erros e falta de credibilidade nos resultados.
+
+---
+
+## 👥 Usuários
+
+O sistema é utilizado por qualquer funcionário participante do processo
+de inventário, independentemente de perfil técnico.
+
+A interface deve assumir que erro humano é possível e fornecer feedback
+visual claro e imediato.
+
+---
+
+## 🧭 Prioridades Não Negociáveis
+
+Todas as prioridades abaixo possuem o mesmo peso:
+
+- Rapidez
+- Confiabilidade
+- Auditoria
+- Funcionamento offline
+
+Nenhuma deve ser sacrificada em favor de outra.
+
+---
+
+## 🔄 Evento Central do Domínio
+
+O evento central do sistema é o **Lançamento**.
+
+Inventários e contagens são estruturas organizacionais.
+Tudo gira em torno de registrar, proteger, sincronizar e consolidar lançamentos.
+
+---
+
+## ✅ Fluxo Principal (Happy Path)
+
+1. Usuário realiza login
+2. Seleciona a área física onde está localizado
+3. Registra um lançamento:
+   - digitando um código ou lendo uma tag
+4. Informa:
+   - quantidade e prateleira (almoxarifado)
+   - cheios, vazios e lotes (gases / cilindros)
+5. O lançamento é sempre registrado localmente (Hive)
+6. O usuário recebe feedback visual imediato
+7. Enquanto visível na tela, o lançamento pode ser corrigido ou apagado
+8. O sistema indica se houve sincronização com o Firebase
+9. Os dados são posteriormente consolidados e exportados em relatórios
+
+A seleção de áreas possui limite temporal (ex.: 10 minutos) para reforçar
+que o usuário deve sempre indicar onde está fisicamente.
+
+---
+
+## 📴 Offline como Premissa
+
+O funcionamento offline não é contingencial.
+Ele é uma premissa de projeto.
+
+Todo dado relevante deve:
+- ser salvo localmente
+- sobreviver a falhas de rede
+- ser sincronizado posteriormente com segurança
+
+O Firebase atua como cópia segura, base de consolidação e auditoria.
+
+---
+
+## 🛠️ Evolução do Sistema
+
+O sistema evolui a partir de incidentes reais.
+
+Casos de duplicidade de lançamento ocorridos no início do projeto geraram
+soluções definitivas para evitar recorrência.
+
+O modelo adotado é semelhante ao da aviação:
+cada falha resulta em uma solução robusta e permanente.
