@@ -27,13 +27,15 @@ class AppStateAdapter extends TypeAdapter<AppState> {
       cursorProdutosShard: fields[7] as String?,
       handover: fields[8] as bool,
       contagemAtual: fields[9] as int?,
+      versaoBarras: fields[10] as int?,
+      versaoProdutos: fields[11] as int?,
     );
   }
 
   @override
   void write(BinaryWriter writer, AppState obj) {
     writer
-      ..writeByte(10)
+      ..writeByte(12)
       ..writeByte(0)
       ..write(obj.lastSyncMateriais)
       ..writeByte(1)
@@ -53,7 +55,11 @@ class AppStateAdapter extends TypeAdapter<AppState> {
       ..writeByte(8)
       ..write(obj.handover)
       ..writeByte(9)
-      ..write(obj.contagemAtual);
+      ..write(obj.contagemAtual)
+      ..writeByte(10)
+      ..write(obj.versaoBarras)
+      ..writeByte(11)
+      ..write(obj.versaoProdutos);
   }
 
   @override

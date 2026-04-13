@@ -39,6 +39,16 @@ class AppState extends HiveObject {
   @HiveField(9)
   int? contagemAtual;
 
+  // ─── Versões das coleções fixas (sincronização automática) ───────────────
+  // Comparadas com sistema/versoes no Firestore a cada login.
+  // Se a versão remota for maior, o app baixa a coleção atualizada.
+
+  @HiveField(10)
+  int? versaoBarras;
+
+  @HiveField(11)
+  int? versaoProdutos;
+
   AppState({
     this.lastSyncMateriais,
     this.lastSyncBarras,
@@ -50,5 +60,7 @@ class AppState extends HiveObject {
     this.cursorProdutosShard,
     this.handover = false,
     this.contagemAtual,
+    this.versaoBarras,
+    this.versaoProdutos,
   });
 }

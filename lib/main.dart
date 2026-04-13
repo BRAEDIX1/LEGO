@@ -8,6 +8,7 @@ import 'package:hive/hive.dart';
 
 import 'package:lego/data/local/hive_boxes.dart';
 import 'package:lego/services/mobile_sync_service.dart';
+import 'package:lego/services/fixed_collections_sync.dart';
 import 'package:lego/ui/home_page.dart';
 import 'package:lego/ui/login_page.dart';
 import 'package:lego/ui/first_sync_screen.dart';
@@ -58,11 +59,11 @@ class _Bootstrapper extends StatelessWidget {
   /// Verifica se o seed inicial já foi feito (mesma lógica do login_page.dart)
   Future<bool> _checkNeedsSync() async {
     try {
-      final state   = await Hive.openBox('app_state');
+      final state    = await Hive.openBox('app_state');
       final seedDone = state.get('seed_v1_done') == true;
       return !seedDone;
     } catch (e) {
-      return true; // Em caso de erro, assume que precisa sincronizar
+      return true;
     }
   }
 
@@ -76,7 +77,11 @@ class _Bootstrapper extends StatelessWidget {
       // Abre boxes do usuário
       await HiveBoxes.openUserLancamentos(user.uid);
 
-      // ⭐ Verifica se o seed já foi feito
+      // ✅ Inicia listener de versão — detecta atualizações do Firestore
+      // em tempo real e sincroniza automaticamente quando há mudança.
+      FixedCollectionsSync().iniciarListenerVersao();
+
+      // Verifica se o seed já foi feito
       final needsSync = await _checkNeedsSync();
       if (needsSync) {
         return const FirstSyncScreen();
