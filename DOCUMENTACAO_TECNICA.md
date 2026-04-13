@@ -1,6 +1,6 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 11/04/2026 10:57:44  
+> **Gerado em:** 12/04/2026 04:57:51  
 > **Projeto:** `C:\Users\djast\LEGO`  
 > **Arquivos analisados:** 72 principais + 4 gerados automaticamente
 
@@ -41,7 +41,7 @@
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **72** | **26,006 linhas** |
+| **Total**             | **72** | **26,019 linhas** |
 
 ### Saúde do projeto
 
@@ -122,7 +122,7 @@
     🖥️ diagnostics_page.dart  (107 linhas)
     🖥️ first_sync_screen.dart  (294 linhas)
     🖥️ handover_page.dart  (28 linhas)
-    🖥️ home_page.dart  (3585 linhas)  ⚠️
+    🖥️ home_page.dart  (3598 linhas)  ⚠️
     🖥️ home_page.hive.dart  (99 linhas)
     🖥️ login_page.dart  (518 linhas)
     📁 desktop/
@@ -170,7 +170,7 @@
 - 🔴 **God File**: `detalhe_inventario_screen.dart` tem **985 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `participantes_screen.dart` tem **1058 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `relatorio_screen.dart` tem **1108 linhas**. Considere dividir em partes menores.
-- 🔴 **God File**: `home_page.dart` tem **3585 linhas**. Considere dividir em partes menores.
+- 🔴 **God File**: `home_page.dart` tem **3598 linhas**. Considere dividir em partes menores.
 - 🟠 **Violação de camada**: `controle_contagem_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `detalhe_inventario_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`, `estoque`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `historico_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`. Mova para um Repositório.
@@ -870,7 +870,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `_Lancamento`, `_Unset`. Suporta `copyWith`. ⚠️ Acessa Firestore diretamente (coleções: inventarios, participantes, lancamentos) — considere mover para um repositório.
 
-- **Linhas:** 3585
+- **Linhas:** 3598
 - **Declarações:** `class _Lancamento`, `class _Unset`, `class _LancamentoDoc`, `class _CadastroManualDialog`, `class _CadastroManualDialogState`, `class _ManualCleanupDialog`, `class _ManualCleanupDialogState`, `class _FormPane`, `class _LancamentosPane`, `class _LancamentosListAndTable`
 - **Métodos públicos:** `copyWith()`, `setState()`, `setStateLocal()`, `two()`, `showDialog()`
 - **Firestore:** `inventarios` (delete, leitura, stream), `participantes` (delete, leitura, stream), `lancamentos` (leitura)
@@ -1800,4 +1800,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 11/04/2026 10:57:44_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 12/04/2026 04:57:51_
