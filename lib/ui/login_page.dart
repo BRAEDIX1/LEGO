@@ -2,8 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import 'home_page.dart';
-import 'package:hive/hive.dart';  // ✅ ADICIONAR
-import 'first_sync_screen.dart';   // ✅ ADICIONAR
+import 'package:hive/hive.dart';
+import 'first_sync_screen.dart';
+import 'package:lego/services/fixed_collections_sync.dart';
 
 class LoginPage extends StatefulWidget {
   const LoginPage({super.key});
@@ -17,9 +18,9 @@ class _LoginPageState extends State<LoginPage> {
   final _emailCtrl = TextEditingController();
   final _passCtrl = TextEditingController();
   final _confirmCtrl = TextEditingController();
-  final _nomeCtrl = TextEditingController();          // ⭐ NOVO
-  final _sobrenomeCtrl = TextEditingController();    // ⭐ NOVO
-  final _nicknameCtrl = TextEditingController();     // ⭐ NOVO
+  final _nomeCtrl = TextEditingController();
+  final _sobrenomeCtrl = TextEditingController();
+  final _nicknameCtrl = TextEditingController();
   final _authService = AuthService();
   bool _obscure = true;
   bool _isLoading = false;
@@ -41,9 +42,9 @@ class _LoginPageState extends State<LoginPage> {
     _emailCtrl.dispose();
     _passCtrl.dispose();
     _confirmCtrl.dispose();
-    _nomeCtrl.dispose();         // ⭐ NOVO
-    _sobrenomeCtrl.dispose();    // ⭐ NOVO
-    _nicknameCtrl.dispose();     // ⭐ NOVO
+    _nomeCtrl.dispose();
+    _sobrenomeCtrl.dispose();
+    _nicknameCtrl.dispose();
     _emailFocus.dispose();
     super.dispose();
   }
@@ -65,7 +66,6 @@ class _LoginPageState extends State<LoginPage> {
     return null;
   }
 
-  // ⭐ NOVO: Validação de nickname
   String? _validateNickname(String? v) {
     if (v == null || v.trim().isEmpty) return 'Informe o nickname';
     if (v.trim().length < 3) return 'Mínimo de 3 caracteres';
@@ -75,11 +75,17 @@ class _LoginPageState extends State<LoginPage> {
     return null;
   }
 
-  // ⭐ NOVO: Validação de nome/sobrenome
   String? _validateNome(String? v, String campo) {
     if (v == null || v.trim().isEmpty) return 'Informe o $campo';
     if (v.trim().length < 2) return '$campo muito curto';
     return null;
+  }
+
+  /// Inicia o listener de versão do Firestore após login bem-sucedido.
+  /// O listener fica ativo enquanto o app estiver aberto e detecta
+  /// atualizações em tempo real no documento sistema/versoes.
+  void _iniciarListenerVersao() {
+    FixedCollectionsSync().iniciarListenerVersao();
   }
 
   Future<void> _handleSubmit() async {
@@ -91,7 +97,6 @@ class _LoginPageState extends State<LoginPage> {
     setState(() => _isLoading = true);
     try {
       if (_isRegister) {
-        // ⭐ MODIFICADO: Passa os novos parâmetros
         await _authService.registerWithEmail(
           email: email,
           password: pass,
@@ -103,10 +108,10 @@ class _LoginPageState extends State<LoginPage> {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Conta criada com sucesso!')),
         );
-        // Após criar, já faz login automaticamente
-        // Após criar, verificar se precisa sincronizar
         final needsSync = await _checkNeedsSync();
         if (!mounted) return;
+
+        _iniciarListenerVersao(); // ✅ Inicia listener após registro
 
         Navigator.pushReplacement(
           context,
@@ -117,19 +122,23 @@ class _LoginPageState extends State<LoginPage> {
           ),
         );
       } else {
-        final userCredential = await _authService.signInWithEmailAndPassword(email: email, password: pass);
+        final userCredential = await _authService.signInWithEmailAndPassword(
+            email: email, password: pass);
         if (!mounted) return;
         final verified = userCredential.user?.emailVerified ?? false;
         if (!verified) {
           await userCredential.user?.sendEmailVerification();
           if (!mounted) return;
           ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('E-mail não verificado. Reenviamos o link.')),
+            const SnackBar(
+                content: Text('E-mail não verificado. Reenviamos o link.')),
           );
           await _authService.signOut();
         } else {
           final needsSync = await _checkNeedsSync();
           if (!mounted) return;
+
+          _iniciarListenerVersao(); // ✅ Inicia listener após login
 
           Navigator.pushReplacement(
             context,
@@ -169,7 +178,7 @@ class _LoginPageState extends State<LoginPage> {
         return 'Senha incorreta';
       case 'email-already-in-use':
         return 'Já existe uma conta com este e-mail';
-      case 'nickname-already-in-use':  // ⭐ NOVO
+      case 'nickname-already-in-use':
         return e.message ?? 'Nickname já está em uso';
       case 'weak-password':
         return 'Senha fraca (mín. 6 caracteres)';
@@ -185,7 +194,8 @@ class _LoginPageState extends State<LoginPage> {
     if (email.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Informe o e-mail para redefinir a senha')),
+        const SnackBar(
+            content: Text('Informe o e-mail para redefinir a senha')),
       );
       return;
     }
@@ -193,7 +203,9 @@ class _LoginPageState extends State<LoginPage> {
       await _authService.sendPasswordResetEmail(email);
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Enviamos um link de redefinição para seu e-mail.')),
+        const SnackBar(
+            content:
+                Text('Enviamos um link de redefinição para seu e-mail.')),
       );
     } catch (e) {
       if (!mounted) return;
@@ -214,6 +226,8 @@ class _LoginPageState extends State<LoginPage> {
       final needsSync = await _checkNeedsSync();
       if (!mounted) return;
 
+      _iniciarListenerVersao(); // ✅ Inicia listener após login com Google
+
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
@@ -225,10 +239,12 @@ class _LoginPageState extends State<LoginPage> {
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       final msg = _translateAuthError(e);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(msg)));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text(msg)));
     } catch (e) {
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Falha: $e')));
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Falha: $e')));
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -237,14 +253,10 @@ class _LoginPageState extends State<LoginPage> {
   /// Verifica se precisa fazer sincronização inicial
   Future<bool> _checkNeedsSync() async {
     try {
-      // Abrir box de estado
       final state = await Hive.openBox('app_state');
       final seedDone = state.get('seed_v1_done') == true;
-
-      // Se flag não está marcada, precisa sincronizar
       return !seedDone;
     } catch (e) {
-      // Em caso de erro, assume que precisa sincronizar
       return true;
     }
   }
@@ -263,28 +275,32 @@ class _LoginPageState extends State<LoginPage> {
           final isDesktop = c.maxWidth > tabletMax;
 
           final form = ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: isDesktop || isTablet ? 420 : double.infinity),
+            constraints: BoxConstraints(
+                maxWidth: isDesktop || isTablet ? 420 : double.infinity),
             child: Card(
               elevation: isMobile ? 0 : 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              margin: EdgeInsets.symmetric(horizontal: isMobile ? 16 : 24, vertical: 24),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(16)),
+              margin: EdgeInsets.symmetric(
+                  horizontal: isMobile ? 16 : 24, vertical: 24),
               child: Padding(
                 padding: EdgeInsets.all(isMobile ? 16 : 24),
                 child: Form(
                   key: _formKey,
-                  child: SingleChildScrollView(  // ⭐ NOVO: permite scroll se tela pequena
+                  child: SingleChildScrollView(
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        Icon(Icons.lock_outline, size: isMobile ? 48 : 64),
+                        Icon(Icons.lock_outline,
+                            size: isMobile ? 48 : 64),
                         const SizedBox(height: 12),
                         Text(
                           _isRegister ? 'Criar conta' : 'Entrar',
-                          style: theme.textTheme.headlineMedium?.copyWith(fontWeight: FontWeight.w600),
+                          style: theme.textTheme.headlineMedium
+                              ?.copyWith(fontWeight: FontWeight.w600),
                         ),
                         const SizedBox(height: 24),
 
-                        // ⭐ NOVOS CAMPOS (só aparecem no cadastro)
                         if (_isRegister) ...[
                           TextFormField(
                             controller: _nomeCtrl,
@@ -307,7 +323,8 @@ class _LoginPageState extends State<LoginPage> {
                               prefixIcon: Icon(Icons.person_outline),
                             ),
                             textCapitalization: TextCapitalization.words,
-                            validator: (v) => _validateNome(v, 'sobrenome'),
+                            validator: (v) =>
+                                _validateNome(v, 'sobrenome'),
                             textInputAction: TextInputAction.next,
                           ),
                           const SizedBox(height: 12),
@@ -317,17 +334,20 @@ class _LoginPageState extends State<LoginPage> {
                             decoration: const InputDecoration(
                               labelText: 'Nickname/Apelido',
                               hintText: 'Ex: djalma_tolentino',
-                              prefixIcon: Icon(Icons.alternate_email),
-                              helperText: 'Apenas letras minúsculas, números e underscore',
+                              prefixIcon:
+                                  Icon(Icons.alternate_email),
+                              helperText:
+                                  'Apenas letras minúsculas, números e underscore',
                             ),
                             validator: _validateNickname,
                             textInputAction: TextInputAction.next,
                             onChanged: (value) {
-                              // Converter para minúsculas automaticamente
                               if (value != value.toLowerCase()) {
-                                _nicknameCtrl.value = _nicknameCtrl.value.copyWith(
+                                _nicknameCtrl.value =
+                                    _nicknameCtrl.value.copyWith(
                                   text: value.toLowerCase(),
-                                  selection: TextSelection.collapsed(offset: value.length),
+                                  selection: TextSelection.collapsed(
+                                      offset: value.length),
                                 );
                               }
                             },
@@ -339,14 +359,18 @@ class _LoginPageState extends State<LoginPage> {
                           controller: _emailCtrl,
                           focusNode: _emailFocus,
                           keyboardType: TextInputType.emailAddress,
-                          autofillHints: const [AutofillHints.email, AutofillHints.username],
+                          autofillHints: const [
+                            AutofillHints.email,
+                            AutofillHints.username
+                          ],
                           decoration: const InputDecoration(
                             labelText: 'E-mail',
                             prefixIcon: Icon(Icons.email_outlined),
                           ),
                           validator: _validateEmail,
                           textInputAction: TextInputAction.next,
-                          onFieldSubmitted: (_) => FocusScope.of(context).nextFocus(),
+                          onFieldSubmitted: (_) =>
+                              FocusScope.of(context).nextFocus(),
                         ),
                         const SizedBox(height: 12),
 
@@ -358,12 +382,17 @@ class _LoginPageState extends State<LoginPage> {
                             labelText: 'Senha',
                             prefixIcon: const Icon(Icons.lock_outline),
                             suffixIcon: IconButton(
-                              onPressed: () => setState(() => _obscure = !_obscure),
-                              icon: Icon(_obscure ? Icons.visibility : Icons.visibility_off),
+                              onPressed: () =>
+                                  setState(() => _obscure = !_obscure),
+                              icon: Icon(_obscure
+                                  ? Icons.visibility
+                                  : Icons.visibility_off),
                             ),
                           ),
                           validator: _validatePassword,
-                          textInputAction: _isRegister ? TextInputAction.next : TextInputAction.done,
+                          textInputAction: _isRegister
+                              ? TextInputAction.next
+                              : TextInputAction.done,
                           onFieldSubmitted: (_) {
                             if (_isRegister) {
                               FocusScope.of(context).nextFocus();
@@ -385,7 +414,8 @@ class _LoginPageState extends State<LoginPage> {
                             validator: (v) {
                               final msg = _validatePassword(v);
                               if (msg != null) return msg;
-                              if (v != _passCtrl.text) return 'As senhas não coincidem';
+                              if (v != _passCtrl.text)
+                                return 'As senhas não coincidem';
                               return null;
                             },
                             textInputAction: TextInputAction.done,
@@ -400,7 +430,8 @@ class _LoginPageState extends State<LoginPage> {
                             children: [
                               Checkbox(
                                 value: _remember,
-                                onChanged: (v) => setState(() => _remember = v ?? false),
+                                onChanged: (v) =>
+                                    setState(() => _remember = v ?? false),
                               ),
                               const Text('Lembrar-me'),
                               const Spacer(),
@@ -417,21 +448,26 @@ class _LoginPageState extends State<LoginPage> {
                           width: double.infinity,
                           height: 48,
                           child: FilledButton(
-                            onPressed: _isLoading ? null : _handleSubmit,
+                            onPressed:
+                                _isLoading ? null : _handleSubmit,
                             child: _isLoading
                                 ? const SizedBox(
-                              width: 20,
-                              height: 20,
-                              child: CircularProgressIndicator(strokeWidth: 2),
-                            )
-                                : Text(_isRegister ? 'Criar conta' : 'Entrar'),
+                                    width: 20,
+                                    height: 20,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2),
+                                  )
+                                : Text(_isRegister
+                                    ? 'Criar conta'
+                                    : 'Entrar'),
                           ),
                         ),
 
                         const SizedBox(height: 12),
 
                         OutlinedButton.icon(
-                          onPressed: _isLoading ? null : _signInWithGoogle,
+                          onPressed:
+                              _isLoading ? null : _signInWithGoogle,
                           icon: const Icon(Icons.login),
                           label: const Text('Entrar com Google'),
                         ),
@@ -441,10 +477,15 @@ class _LoginPageState extends State<LoginPage> {
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            Text(_isRegister ? 'Já tem conta?' : 'Novo por aqui?'),
+                            Text(_isRegister
+                                ? 'Já tem conta?'
+                                : 'Novo por aqui?'),
                             TextButton(
-                              onPressed: () => setState(() => _isRegister = !_isRegister),
-                              child: Text(_isRegister ? 'Entrar' : 'Criar conta'),
+                              onPressed: () => setState(
+                                  () => _isRegister = !_isRegister),
+                              child: Text(_isRegister
+                                  ? 'Entrar'
+                                  : 'Criar conta'),
                             ),
                           ],
                         ),
@@ -483,14 +524,16 @@ class _LoginPageState extends State<LoginPage> {
                       Text(
                         'Bem-vindo ao seu painel',
                         textAlign: TextAlign.center,
-                        style: theme.textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.w600),
+                        style: theme.textTheme.headlineSmall
+                            ?.copyWith(fontWeight: FontWeight.w600),
                       ),
                       const SizedBox(height: 12),
                       Text(
                         'Acesse a plataforma para gerenciar seus dados com segurança.',
                         textAlign: TextAlign.center,
                         style: theme.textTheme.bodyMedium?.copyWith(
-                          color: theme.textTheme.bodyMedium?.color?.withValues(alpha: 0.8),
+                          color: theme.textTheme.bodyMedium?.color
+                              ?.withValues(alpha: 0.8),
                         ),
                       ),
                     ],
@@ -502,12 +545,15 @@ class _LoginPageState extends State<LoginPage> {
 
           if (isMobile) {
             return SafeArea(
-              child: Center(child: SingleChildScrollView(child: form)),
+              child: Center(
+                  child: SingleChildScrollView(child: form)),
             );
           }
           return Row(
             children: [
-              Expanded(child: Center(child: SingleChildScrollView(child: form))),
+              Expanded(
+                  child: Center(
+                      child: SingleChildScrollView(child: form))),
               sidePanel,
             ],
           );
