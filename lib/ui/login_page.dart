@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
 import 'home_page.dart';
 import 'package:hive/hive.dart';
@@ -26,6 +27,7 @@ class _LoginPageState extends State<LoginPage> {
   bool _isLoading = false;
   bool _isRegister = false;
   bool _remember = false;
+  String _versao = '';
 
   final String? _allowedDomain = null;
 
@@ -35,6 +37,9 @@ class _LoginPageState extends State<LoginPage> {
   void initState() {
     super.initState();
     _emailFocus.requestFocus();
+    PackageInfo.fromPlatform().then((info) {
+      if (mounted) setState(() => _versao = info.version);
+    });
   }
 
   @override
@@ -266,6 +271,16 @@ class _LoginPageState extends State<LoginPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      bottomNavigationBar: _versao.isEmpty
+          ? null
+          : Padding(
+              padding: const EdgeInsets.only(bottom: 12),
+              child: Text(
+                'v$_versao',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 12, color: Colors.grey[500]),
+              ),
+            ),
       body: LayoutBuilder(
         builder: (context, c) {
           const mobileMax = 600.0;
