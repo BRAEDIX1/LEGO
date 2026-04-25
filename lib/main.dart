@@ -12,6 +12,7 @@ import 'package:lego/services/fixed_collections_sync.dart';
 import 'package:lego/ui/home_page.dart';
 import 'package:lego/ui/login_page.dart';
 import 'package:lego/ui/first_sync_screen.dart';
+import 'package:lego/ui/update_checker_screen.dart';
 import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';
 import 'firebase_options.dart';
 
@@ -47,7 +48,7 @@ class MyApp extends StatelessWidget {
         '/home':          (context) => const HomePage(),
         '/modo_operacao': (context) => const ModoOperacaoScreen(),
       },
-      home: const _Bootstrapper(),
+      home: const UpdateCheckerScreen(proximaTela: _Bootstrapper()),
     );
   }
 }

@@ -1268,6 +1268,8 @@ class _LancamentosPane extends StatelessWidget {
               registro: m.registro,  // ADICIONAR ESTA LINHA
               ordemServico: m.ordemServico,
               comentario:   m.comentario,
+              localizacaoId:   m.localizacaoId,
+              localizacaoNome: m.localizacaoNome,
             ),
           );
         }).toList();
@@ -1590,6 +1592,7 @@ class _LancamentosListAndTable extends StatelessWidget {
         DataColumn(label: Text('Vazio', style: hdrStyle)),
         DataColumn(label: Text('Cheio', style: hdrStyle)),
         DataColumn(label: Text('Qtde', style: hdrStyle)),
+        DataColumn(label: Text('Localização', style: hdrStyle)),
         DataColumn(label: Text('Data/Hora', style: hdrStyle)),
         const DataColumn(label: Text('Ações')),
       ],
@@ -1620,6 +1623,7 @@ class _LancamentosListAndTable extends StatelessWidget {
               DataCell(_right(_fmtQtde(itens[i].data.vazio))),
               DataCell(_right(_fmtQtde(itens[i].data.cheio))),
               DataCell(_right(_fmtQtde(itens[i].data.quantidade))),
+              DataCell(Text(itens[i].data.localizacaoNome ?? '—')),
               DataCell(Text(_fmtHora(itens[i].data.hora))),
               DataCell(Row(
                 mainAxisSize: MainAxisSize.min,
@@ -1684,12 +1688,15 @@ class _LancamentosListAndTable extends StatelessWidget {
 
           final linha1 = '${it.data.tag} • ${it.data.descricao}';
           final ordemStr = (it.data.ordemServico != null && it.data.ordemServico!.isNotEmpty)
-              ? ' • OS: \${it.data.ordemServico}'
+              ? ' • OS: ${it.data.ordemServico}'
               : '';
-          final linha2 = 'Código: \${it.data.codigo} • Unid: \${it.data.unidade} • Lote: \${it.data.lote}\$ordemStr';
+          final linha2 = 'Código: ${it.data.codigo} • Unid: ${it.data.unidade} • Lote: ${it.data.lote}$ordemStr';
           final linha3 =
               'Prat: ${it.data.prateleira} • Vazio: ${_fmtQtde(it.data.vazio)} • Cheio: ${_fmtQtde(it.data.cheio)} • Qtde: ${_fmtQtde(it.data.quantidade)}';
-          final linha4 = _fmtHora(it.data.hora);
+          final locStr = (it.data.localizacaoNome != null && it.data.localizacaoNome!.isNotEmpty)
+              ? ' • Local: ${it.data.localizacaoNome}'
+              : '';
+          final linha4 = '${_fmtHora(it.data.hora)}$locStr';
 
           return ListTile(
             leading: _StatusButton(doc: it, repo: repo),

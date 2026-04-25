@@ -1,7 +1,7 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 12/04/2026 04:57:51  
-> **Projeto:** `C:\Users\djast\LEGO`  
+> **Gerado em:** 24/04/2026 18:29:26  
+> **Projeto:** `C:\Users\Dell\LEGO`  
 > **Arquivos analisados:** 72 principais + 4 gerados automaticamente
 
 ---
@@ -41,7 +41,7 @@
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **72** | **26,019 linhas** |
+| **Total**             | **72** | **26,158 linhas** |
 
 ### Saúde do projeto
 
@@ -73,7 +73,7 @@
 📁 lib/
   📄 firebase_options.dart  (84 linhas)
   📄 hive_probe_strict.dart  (145 linhas)
-  🚀 main.dart  (111 linhas)
+  🚀 main.dart  (116 linhas)
   🚀 main_desktop.dart  (260 linhas)
   📄 test_hive.dart  (78 linhas)
   📄 test_hive_seed.dart  (218 linhas)
@@ -81,7 +81,7 @@
     ⚙️ planta_diadema_config.dart  (192 linhas)
   📁 data/
     📁 local/
-      🗃️ app_state.dart  (54 linhas)
+      🗃️ app_state.dart  (67 linhas)
       🗃️ barra_local.dart  (19 linhas)
       📄 hive_boxes.dart  (48 linhas)
       🗃️ lanc_local.dart  (162 linhas)
@@ -106,7 +106,7 @@
     ⚙️ estoque_service.dart  (466 linhas)
     ⚙️ excel_parser_service.dart  (397 linhas)
     ⚙️ exportar_excel_service.dart  (472 linhas)
-    📄 fixed_collections_sync.dart  (141 linhas)
+    📄 fixed_collections_sync.dart  (215 linhas)
     📄 hive_diagnostics.dart  (129 linhas)
     ⚙️ inventario_service.dart  (704 linhas)
     ⚙️ mobile_sync_service.dart  (494 linhas)
@@ -124,7 +124,7 @@
     🖥️ handover_page.dart  (28 linhas)
     🖥️ home_page.dart  (3598 linhas)  ⚠️
     🖥️ home_page.hive.dart  (99 linhas)
-    🖥️ login_page.dart  (518 linhas)
+    🖥️ login_page.dart  (565 linhas)
     📁 desktop/
       📁 screens/
         🖥️ analise_patrimonial_screen.dart  (275 linhas)
@@ -188,14 +188,14 @@
 
 | typeId | Classe | Arquivo | Campos | Próximo fieldId |
 |:------:|--------|---------|:------:|:---------------:|
-| 2 | `class AppState` | `app_state.dart` | 10 | **10** |
+| 2 | `class AppState` | `app_state.dart` | 12 | **12** |
 | 31 | `class ProdutoLocal` | `produto_local.dart` | 5 | **5** |
 | 32 | `class BarraLocal` | `barra_local.dart` | 4 | **4** |
 | 41 | `class LancLocal` | `lanc_local.dart` | 25 | **25** |
 
 ### Campos por modelo
 
-#### `app_state.dart` — typeId `2` — próximo fieldId: `10`
+#### `app_state.dart` — typeId `2` — próximo fieldId: `12`
 
 | fieldId | Tipo | Nome |
 |:-------:|------|------|
@@ -209,6 +209,8 @@
 | 7 | `String?` | `cursorProdutosShard` |
 | 8 | `bool` | `handover` |
 | 9 | `int?` | `contagemAtual` |
+| 10 | `int?` | `versaoBarras` |
+| 11 | `int?` | `versaoProdutos` |
 
 #### `produto_local.dart` — typeId `31` — próximo fieldId: `5`
 
@@ -283,7 +285,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 | `materiais` | leitura | `consolidation_service.dart`, `estoque_service.dart`, `fixed_collections_sync.dart` |
 | `participantes` | delete, escrita, leitura, stream, update | `controle_contagem_screen.dart`, `detalhe_inventario_screen.dart`, `home_page.dart`, `inventario_service.dart`, `mobile_sync_service.dart` _(+1)_ |
 | `produtos_manuais` | escrita | `produtos_repository.dart` |
-| `sistema` | leitura | `inventario_service.dart` |
+| `sistema` | leitura, stream | `fixed_collections_sync.dart`, `inventario_service.dart` |
 | `users` | escrita, leitura, update | `sync_diagnostics.dart`, `user_service.dart` |
 
 ### Detalhes por coleção
@@ -361,6 +363,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 | Arquivo | Operações |
 |---------|-----------|
+| `fixed_collections_sync.dart` | stream |
 | `inventario_service.dart` | leitura |
 
 #### `users`
@@ -400,9 +403,10 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Entry point mobile — inicializa Firebase, Hive e roteamento.
 
-- **Linhas:** 111
+- **Linhas:** 116
 - **Declarações:** `class MyApp`, `class _Bootstrapper`
-- **Importa (locais):** `hive_boxes.dart`, `mobile_sync_service.dart`, `home_page.dart`, `login_page.dart`, `first_sync_screen.dart`, `modo_operacao_screen.dart`, `firebase_options.dart`
+- **Métodos públicos:** `main()`, `runApp()`
+- **Importa (locais):** `hive_boxes.dart`, `mobile_sync_service.dart`, `fixed_collections_sync.dart`, `home_page.dart`, `login_page.dart`, `first_sync_screen.dart`, `modo_operacao_screen.dart`, `firebase_options.dart`
 - **Pacotes:** firebase_core, firebase_auth, hive_flutter, hive
 - **Importado por:** `widget_test.dart`
 - **Rotas:** `/login`, `/home`, `/modo_operacao`
@@ -452,12 +456,12 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 #### `app_state.dart` — 🗃️  Modelo Hive
 
-> Modelo Hive (typeId 2) com 10 campos persistidos localmente: lastSyncMateriais, lastSyncBarras, lastSyncGases, lastLogin, lastSyncProdutos.
+> Modelo Hive (typeId 2) com 12 campos persistidos localmente: lastSyncMateriais, lastSyncBarras, lastSyncGases, lastLogin, lastSyncProdutos.
 
-- **Linhas:** 54
+- **Linhas:** 67
 - **Declarações:** `class AppState`
-- **Hive:** typeId `2` | 10 campos | próximo fieldId: `10`
-- **Campos Hive:** `lastSyncMateriais`:`String?`, `lastSyncBarras`:`String?`, `lastSyncGases`:`String?`, `lastLogin`:`DateTime?`, `lastSyncProdutos`:`String?`, `seedVersion`:`int`, `cursorBarrasShard`:`String?`, `cursorProdutosShard`:`String?`, `handover`:`bool`, `contagemAtual`:`int?`
+- **Hive:** typeId `2` | 12 campos | próximo fieldId: `12`
+- **Campos Hive:** `lastSyncMateriais`:`String?`, `lastSyncBarras`:`String?`, `lastSyncGases`:`String?`, `lastLogin`:`DateTime?`, `lastSyncProdutos`:`String?`, `seedVersion`:`int`, `cursorBarrasShard`:`String?`, `cursorProdutosShard`:`String?`, `handover`:`bool`, `contagemAtual`:`int?`, `versaoBarras`:`int?`, `versaoProdutos`:`int?`
 - **Pacotes:** hive
 - **Importado por:** `fixed_collections_sync.dart`, `contagem_choice_page.dart`
 
@@ -704,13 +708,13 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Sincroniza coleções fixas (produtos, barras) do Firestore para o Hive.
 
-- **Linhas:** 141
+- **Linhas:** 215
 - **Declarações:** `class FixedCollectionsSync`
-- **Métodos públicos:** `fullSync()`, `log()`, `ensureIncrementalInBackground()`
-- **Firestore:** `materiais` (leitura), `barras` (leitura)
+- **Métodos públicos:** `iniciarListenerVersao()`, `log()`, `pararListenerVersao()`, `fullSync()`, `ensureIncrementalInBackground()`
+- **Firestore:** `sistema` (stream), `barras` (leitura), `materiais` (leitura)
 - **Importa (locais):** `app_state.dart`, `barra_local.dart`, `produto_local.dart`, `hive_boxes.dart`
 - **Pacotes:** cloud_firestore, hive
-- **Importado por:** `offline_bootstrap.dart`
+- **Importado por:** `main.dart`, `offline_bootstrap.dart`, `login_page.dart`
 
 #### `hive_diagnostics.dart` — 📄  Dart
 
@@ -893,11 +897,11 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `LoginPage`, `_LoginPageState`. Suporta `copyWith`.
 
-- **Linhas:** 518
+- **Linhas:** 565
 - **Declarações:** `class LoginPage`, `class _LoginPageState`
 - **Métodos públicos:** `setState()`
 - **Recursos:** `copyWith`
-- **Importa (locais):** `auth_service.dart`, `home_page.dart`, `first_sync_screen.dart`
+- **Importa (locais):** `auth_service.dart`, `home_page.dart`, `first_sync_screen.dart`, `fixed_collections_sync.dart`
 - **Pacotes:** firebase_auth, hive
 - **Importado por:** `main.dart`
 
@@ -1177,7 +1181,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 | Arquivo | Linhas | Pasta |
 |---------|:------:|-------|
-| `app_state.g.dart` | 69 | `lib/data/local` |
+| `app_state.g.dart` | 75 | `lib/data/local` |
 | `barra_local.g.dart` | 51 | `lib/data/local` |
 | `lanc_local.g.dart` | 197 | `lib/data/local` |
 | `produto_local.g.dart` | 54 | `lib/data/local` |
@@ -1203,27 +1207,27 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 | 9 | `divergencia.dart` | 6 | `consolidation_service.dart`, `exportar_excel_service.dart`, `relatorio_service.dart`, `comparativo_contagens_screen.dart`, `relatorio_screen.dart` _(+1)_ |
 | 10 | `seed_importer.dart` | 5 | `offline_bootstrap.dart`, `seed_bootstrap.dart`, `test_hive.dart`, `test_hive_seed.dart`, `first_sync_screen.dart` |
 | 11 | `mobile_sync_service.dart` | 3 | `main.dart`, `modo_operacao_screen.dart`, `inventario_ativo_widget.dart` |
-| 12 | `home_page.dart` | 3 | `main.dart`, `first_sync_screen.dart`, `login_page.dart` |
-| 13 | `lancamentos_repository.dart` | 3 | `auth_service.dart`, `sync_service.dart`, `home_page.dart` |
-| 14 | `relatorio_service.dart` | 3 | `exportar_excel_service.dart`, `detalhe_inventario_screen.dart`, `relatorio_screen.dart` |
-| 15 | `consolidation_service.dart` | 3 | `analise_patrimonial_screen.dart`, `comparativo_contagens_screen.dart`, `filtros_bar_widget.dart` |
-| 16 | `participante.dart` | 3 | `controle_contagem_screen.dart`, `detalhe_inventario_screen.dart`, `participantes_screen.dart` |
-| 17 | `relatorio_screen.dart` | 3 | `dashboard_desktop_screen.dart`, `detalhe_inventario_screen.dart`, `historico_screen.dart` |
-| 18 | `user_service.dart` | 2 | `lancamentos_repository.dart`, `auth_service.dart` |
-| 19 | `first_sync_screen.dart` | 2 | `main.dart`, `login_page.dart` |
-| 20 | `modo_operacao_screen.dart` | 2 | `main.dart`, `inventario_ativo_widget.dart` |
-| 21 | `firebase_options.dart` | 2 | `main.dart`, `main_desktop.dart` |
-| 22 | `connectivity_service.dart` | 2 | `auth_service.dart`, `offline_bootstrap.dart` |
-| 23 | `seed_bootstrap.dart` | 2 | `auth_service.dart`, `first_sync_screen.dart` |
-| 24 | `sync_service.dart` | 2 | `connectivity_service.dart`, `home_page.dart` |
-| 25 | `app_state.dart` | 2 | `fixed_collections_sync.dart`, `contagem_choice_page.dart` |
-| 26 | `estoque_service.dart` | 2 | `criar_inventario_screen.dart`, `importar_estoque_screen.dart` |
-| 27 | `participantes_screen.dart` | 2 | `dashboard_desktop_screen.dart`, `dashboard_screen.dart` |
-| 28 | `produtos_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
-| 29 | `barras_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
-| 30 | `login_page.dart` | 1 | `main.dart` |
-| 31 | `dashboard_desktop_screen.dart` | 1 | `main_desktop.dart` |
-| 32 | `fixed_collections_sync.dart` | 1 | `offline_bootstrap.dart` |
+| 12 | `fixed_collections_sync.dart` | 3 | `main.dart`, `offline_bootstrap.dart`, `login_page.dart` |
+| 13 | `home_page.dart` | 3 | `main.dart`, `first_sync_screen.dart`, `login_page.dart` |
+| 14 | `lancamentos_repository.dart` | 3 | `auth_service.dart`, `sync_service.dart`, `home_page.dart` |
+| 15 | `relatorio_service.dart` | 3 | `exportar_excel_service.dart`, `detalhe_inventario_screen.dart`, `relatorio_screen.dart` |
+| 16 | `consolidation_service.dart` | 3 | `analise_patrimonial_screen.dart`, `comparativo_contagens_screen.dart`, `filtros_bar_widget.dart` |
+| 17 | `participante.dart` | 3 | `controle_contagem_screen.dart`, `detalhe_inventario_screen.dart`, `participantes_screen.dart` |
+| 18 | `relatorio_screen.dart` | 3 | `dashboard_desktop_screen.dart`, `detalhe_inventario_screen.dart`, `historico_screen.dart` |
+| 19 | `user_service.dart` | 2 | `lancamentos_repository.dart`, `auth_service.dart` |
+| 20 | `first_sync_screen.dart` | 2 | `main.dart`, `login_page.dart` |
+| 21 | `modo_operacao_screen.dart` | 2 | `main.dart`, `inventario_ativo_widget.dart` |
+| 22 | `firebase_options.dart` | 2 | `main.dart`, `main_desktop.dart` |
+| 23 | `connectivity_service.dart` | 2 | `auth_service.dart`, `offline_bootstrap.dart` |
+| 24 | `seed_bootstrap.dart` | 2 | `auth_service.dart`, `first_sync_screen.dart` |
+| 25 | `sync_service.dart` | 2 | `connectivity_service.dart`, `home_page.dart` |
+| 26 | `app_state.dart` | 2 | `fixed_collections_sync.dart`, `contagem_choice_page.dart` |
+| 27 | `estoque_service.dart` | 2 | `criar_inventario_screen.dart`, `importar_estoque_screen.dart` |
+| 28 | `participantes_screen.dart` | 2 | `dashboard_desktop_screen.dart`, `dashboard_screen.dart` |
+| 29 | `produtos_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
+| 30 | `barras_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
+| 31 | `login_page.dart` | 1 | `main.dart` |
+| 32 | `dashboard_desktop_screen.dart` | 1 | `main_desktop.dart` |
 | 33 | `user_profile.dart` | 1 | `user_service.dart` |
 | 34 | `balanco_summary_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
 | 35 | `filtros_bar_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
@@ -1363,6 +1367,12 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 - `main.dart`
 - `modo_operacao_screen.dart`
 
+### `fixed_collections_sync.dart` — 🟡 MÉDIO (3 dependente(s))
+
+- `login_page.dart`
+- `main.dart`
+- `offline_bootstrap.dart`
+
 ### `home_page.dart` — 🟡 MÉDIO (3 dependente(s))
 
 - `first_sync_screen.dart`
@@ -1466,10 +1476,6 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 ### `dashboard_desktop_screen.dart` — 🟡 MÉDIO (1 dependente(s))
 
 - `main_desktop.dart`
-
-### `fixed_collections_sync.dart` — 🟡 MÉDIO (1 dependente(s))
-
-- `offline_bootstrap.dart`
 
 ### `user_profile.dart` — 🟡 MÉDIO (1 dependente(s))
 
@@ -1677,7 +1683,7 @@ _Para adicionar um campo:_
 **Arquivos relevantes:**
 
 - `lib/data/local/app_state.dart` — `class AppState`
-  > Modelo Hive (typeId 2) com 10 campos persistidos localmente: lastSyncMateriais, lastSyncBarras, lastSyncGases, lastLogin, lastSyncProdutos.
+  > Modelo Hive (typeId 2) com 12 campos persistidos localmente: lastSyncMateriais, lastSyncBarras, lastSyncGases, lastLogin, lastSyncProdutos.
 - `lib/data/local/barra_local.dart` — `class BarraLocal`
   > Modelo Hive (typeId 32) com 4 campos persistidos localmente: tag, codigo, lote, updatedAt.
 - `lib/data/local/lanc_local.dart` — `enum LancStatus`, `enum TipoRegistro`, `class LancLocal`
@@ -1800,4 +1806,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 12/04/2026 04:57:51_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 24/04/2026 18:29:26_
