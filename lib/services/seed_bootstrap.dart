@@ -9,7 +9,7 @@ class SeedBootstrap {
   static const _seedFlagKey = 'seed_v1_done';
   static const _seedVersionKey = 'seed_app_version';
 
-  /// ✅ NOVO: Versão COM progresso via Stream
+  /// ✅ Versão COM progresso via Stream
   static Stream<SyncProgress> ensureSeedOnceWithProgress({
     String assetPath = 'assets/firestore_dump.json',
   }) async* {
@@ -20,7 +20,7 @@ class SeedBootstrap {
     final produtos = await HiveBoxes.openProdutos();
     final barras = await HiveBoxes.openBarras();
 
-    // 3) Estado do app (flag idempotente)
+    // 3) Estado do app
     final state = await (Hive.isBoxOpen(_stateBox)
         ? Future.value(Hive.box(_stateBox))
         : Hive.openBox(_stateBox));
@@ -43,7 +43,13 @@ class SeedBootstrap {
       return;
     }
 
-    // 5) Se estiver vazio OU flag não marcada OU versão mudou, importa COM progresso
+    // 5) Versão mudou ou primeiro acesso — limpa boxes e reimporta tudo
+    await produtos.clear();
+    await barras.clear();
+    await state.put(_seedFlagKey, false);
+    await state.flush();
+
+    // 6) Importa COM progresso
     try {
       await for (final progress in SeedImporter().importFromAssetJsonWithProgress(assetPath)) {
         yield progress;
