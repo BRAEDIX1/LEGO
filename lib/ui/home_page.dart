@@ -2332,6 +2332,14 @@ class _HomePageState extends State<HomePage> {
     // Limpar código ao buscar por TAG
     _codigoCtrl.clear();
 
+    // Verificar cache imediatamente (sem await)
+    if (_tagsCache != null && _tagsCache!.contains(tag)) {
+      // _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
+      _barrasCtrl.clear();
+      _barrasFocus.requestFocus();
+      return;
+    }
+
     // Verificar se TAG já foi lançada
     try {
       final repo = LancamentosRepository(uid: FirebaseAuth.instance.currentUser!.uid);
@@ -2345,7 +2353,7 @@ class _HomePageState extends State<HomePage> {
           _viaTag = false;
           _viaCodigo = false;
         });
-        _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
+        // _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
         _barrasCtrl.clear();
         _barrasFocus.requestFocus();
         return;
@@ -2637,6 +2645,7 @@ class _HomePageState extends State<HomePage> {
 
       debugPrint('Lançamento registrado com sucesso no Hive');
       _snack('Lançamento registrado com sucesso');
+      if (tag.isNotEmpty) _tagsCache?.add(tag);
       _formKey.currentState!.reset();
       _codigoCtrl.clear();
       _barrasCtrl.clear();
@@ -2654,8 +2663,10 @@ class _HomePageState extends State<HomePage> {
         _tagAtual = null;
       });
 
-      FocusScope.of(context).unfocus();
-      _barrasFocus.requestFocus();
+      // FocusScope.of(context).unfocus();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        _barrasFocus.requestFocus();
+      });
 
       final uid = FirebaseAuth.instance.currentUser?.uid;
       if (uid != null) {
@@ -2672,7 +2683,7 @@ class _HomePageState extends State<HomePage> {
         setState(() {
           _isSubmitting = false;
         });
-        _barrasFocus.requestFocus();
+        // _barrasFocus.requestFocus();
       }
     }
   }

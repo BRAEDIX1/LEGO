@@ -1,8 +1,8 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 24/04/2026 18:29:26  
+> **Gerado em:** 01/05/2026 13:18:42  
 > **Projeto:** `C:\Users\Dell\LEGO`  
-> **Arquivos analisados:** 72 principais + 4 gerados automaticamente
+> **Arquivos analisados:** 74 principais + 4 gerados automaticamente
 
 ---
 
@@ -35,13 +35,13 @@
 | Camada | Qtd | Arquivos |
 |--------|:---:|---------|
 | 🚀 Entry Points       | 2  | `main.dart`, `main_desktop.dart` |
-| 🖥️ Telas              | 21   | `contagem_choice_page.dart`, `analise_patrimonial_screen.dart`, `comparativo_contagens_screen.dart`, `comparativo_inventarios_screen.dart`, `controle_contagem_screen.dart` _+16 mais_ |
-| ⚙️ Serviços           | 12| `auth_service.dart`, `comparativo_service.dart`, `connectivity_service.dart`, `consolidation_service.dart`, `estoque_service.dart` _+7 mais_ |
+| 🖥️ Telas              | 22   | `contagem_choice_page.dart`, `analise_patrimonial_screen.dart`, `comparativo_contagens_screen.dart`, `comparativo_inventarios_screen.dart`, `controle_contagem_screen.dart` _+17 mais_ |
+| ⚙️ Serviços           | 13| `auth_service.dart`, `comparativo_service.dart`, `connectivity_service.dart`, `consolidation_service.dart`, `estoque_service.dart` _+8 mais_ |
 | 🏛️ Repositórios       | 3   | `barras_repository.dart`, `lancamentos_repository.dart`, `produtos_repository.dart` |
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **72** | **26,158 linhas** |
+| **Total**             | **74** | **26,508 linhas** |
 
 ### Saúde do projeto
 
@@ -73,7 +73,7 @@
 📁 lib/
   📄 firebase_options.dart  (84 linhas)
   📄 hive_probe_strict.dart  (145 linhas)
-  🚀 main.dart  (116 linhas)
+  🚀 main.dart  (117 linhas)
   🚀 main_desktop.dart  (260 linhas)
   📄 test_hive.dart  (78 linhas)
   📄 test_hive_seed.dart  (218 linhas)
@@ -116,15 +116,17 @@
     📄 seed_importer.dart  (236 linhas)
     📄 sync_diagnostics.dart  (38 linhas)
     ⚙️ sync_service.dart  (92 linhas)
+    ⚙️ update_service.dart  (114 linhas)
     ⚙️ user_service.dart  (219 linhas)
   📁 ui/
     🖥️ contagem_choice_page.dart  (63 linhas)
     🖥️ diagnostics_page.dart  (107 linhas)
     🖥️ first_sync_screen.dart  (294 linhas)
     🖥️ handover_page.dart  (28 linhas)
-    🖥️ home_page.dart  (3598 linhas)  ⚠️
+    🖥️ home_page.dart  (3605 linhas)  ⚠️
     🖥️ home_page.hive.dart  (99 linhas)
-    🖥️ login_page.dart  (565 linhas)
+    🖥️ login_page.dart  (580 linhas)
+    🖥️ update_checker_screen.dart  (213 linhas)
     📁 desktop/
       📁 screens/
         🖥️ analise_patrimonial_screen.dart  (275 linhas)
@@ -170,7 +172,7 @@
 - 🔴 **God File**: `detalhe_inventario_screen.dart` tem **985 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `participantes_screen.dart` tem **1058 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `relatorio_screen.dart` tem **1108 linhas**. Considere dividir em partes menores.
-- 🔴 **God File**: `home_page.dart` tem **3598 linhas**. Considere dividir em partes menores.
+- 🔴 **God File**: `home_page.dart` tem **3605 linhas**. Considere dividir em partes menores.
 - 🟠 **Violação de camada**: `controle_contagem_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `detalhe_inventario_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`, `estoque`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `historico_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`. Mova para um Repositório.
@@ -403,10 +405,10 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Entry point mobile — inicializa Firebase, Hive e roteamento.
 
-- **Linhas:** 116
+- **Linhas:** 117
 - **Declarações:** `class MyApp`, `class _Bootstrapper`
 - **Métodos públicos:** `main()`, `runApp()`
-- **Importa (locais):** `hive_boxes.dart`, `mobile_sync_service.dart`, `fixed_collections_sync.dart`, `home_page.dart`, `login_page.dart`, `first_sync_screen.dart`, `modo_operacao_screen.dart`, `firebase_options.dart`
+- **Importa (locais):** `hive_boxes.dart`, `mobile_sync_service.dart`, `fixed_collections_sync.dart`, `home_page.dart`, `login_page.dart`, `first_sync_screen.dart`, `update_checker_screen.dart`, `modo_operacao_screen.dart`, `firebase_options.dart`
 - **Pacotes:** firebase_core, firebase_auth, hive_flutter, hive
 - **Importado por:** `widget_test.dart`
 - **Rotas:** `/login`, `/home`, `/modo_operacao`
@@ -820,6 +822,16 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 - **Pacotes:** cloud_firestore
 - **Importado por:** `connectivity_service.dart`, `home_page.dart`
 
+#### `update_service.dart` — ⚙️  Serviço
+
+> Serviço de negócio — expõe: verificarAtualizacao, baixarApk, onConcluido().
+
+- **Linhas:** 114
+- **Declarações:** `class ReleaseInfo`, `class UpdateService`
+- **Métodos públicos:** `verificarAtualizacao()`, `baixarApk()`, `onConcluido()`
+- **Pacotes:** package_info_plus, path_provider
+- **Importado por:** `update_checker_screen.dart`
+
 #### `user_service.dart` — ⚙️  Serviço
 
 > Serviço de negócio — expõe: criarPerfil, buscarPerfil, buscarNickname, atualizarPerfil(). ⚠️ Acessa Firestore diretamente (coleções: users) — considere mover para um repositório.
@@ -874,7 +886,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `_Lancamento`, `_Unset`. Suporta `copyWith`. ⚠️ Acessa Firestore diretamente (coleções: inventarios, participantes, lancamentos) — considere mover para um repositório.
 
-- **Linhas:** 3598
+- **Linhas:** 3605
 - **Declarações:** `class _Lancamento`, `class _Unset`, `class _LancamentoDoc`, `class _CadastroManualDialog`, `class _CadastroManualDialogState`, `class _ManualCleanupDialog`, `class _ManualCleanupDialogState`, `class _FormPane`, `class _LancamentosPane`, `class _LancamentosListAndTable`
 - **Métodos públicos:** `copyWith()`, `setState()`, `setStateLocal()`, `two()`, `showDialog()`
 - **Firestore:** `inventarios` (delete, leitura, stream), `participantes` (delete, leitura, stream), `lancamentos` (leitura)
@@ -897,12 +909,23 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `LoginPage`, `_LoginPageState`. Suporta `copyWith`.
 
-- **Linhas:** 565
+- **Linhas:** 580
 - **Declarações:** `class LoginPage`, `class _LoginPageState`
 - **Métodos públicos:** `setState()`
 - **Recursos:** `copyWith`
 - **Importa (locais):** `auth_service.dart`, `home_page.dart`, `first_sync_screen.dart`, `fixed_collections_sync.dart`
-- **Pacotes:** firebase_auth, hive
+- **Pacotes:** firebase_auth, package_info_plus, hive
+- **Importado por:** `main.dart`
+
+#### `update_checker_screen.dart` — 🖥️  Tela
+
+> Tela da interface — `UpdateCheckerScreen`, `_UpdateCheckerScreenState`.
+
+- **Linhas:** 213
+- **Declarações:** `class UpdateCheckerScreen`, `class _UpdateCheckerScreenState`, `class _DialogAtualizacao`, `class _DialogProgresso`, `class _DialogProgressoState`
+- **Métodos públicos:** `showDialog()`
+- **Importa (locais):** `update_service.dart`
+- **Pacotes:** open_filex
 - **Importado por:** `main.dart`
 
 ### 📁 `lib/ui/desktop/screens`
@@ -1227,15 +1250,15 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 | 29 | `produtos_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
 | 30 | `barras_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
 | 31 | `login_page.dart` | 1 | `main.dart` |
-| 32 | `dashboard_desktop_screen.dart` | 1 | `main_desktop.dart` |
-| 33 | `user_profile.dart` | 1 | `user_service.dart` |
-| 34 | `balanco_summary_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
-| 35 | `filtros_bar_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
-| 36 | `tabela_produtos_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
-| 37 | `alerta_badge_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
-| 38 | `divergencia_card_widget.dart` | 1 | `comparativo_contagens_screen.dart` |
-| 39 | `comparativo_service.dart` | 1 | `comparativo_inventarios_screen.dart` |
-| 40 | `excel_parser_service.dart` | 1 | `criar_inventario_screen.dart` |
+| 32 | `update_checker_screen.dart` | 1 | `main.dart` |
+| 33 | `dashboard_desktop_screen.dart` | 1 | `main_desktop.dart` |
+| 34 | `user_profile.dart` | 1 | `user_service.dart` |
+| 35 | `balanco_summary_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
+| 36 | `filtros_bar_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
+| 37 | `tabela_produtos_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
+| 38 | `alerta_badge_widget.dart` | 1 | `analise_patrimonial_screen.dart` |
+| 39 | `divergencia_card_widget.dart` | 1 | `comparativo_contagens_screen.dart` |
+| 40 | `comparativo_service.dart` | 1 | `comparativo_inventarios_screen.dart` |
 
 ---
 
@@ -1473,6 +1496,10 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 - `main.dart`
 
+### `update_checker_screen.dart` — 🟡 MÉDIO (1 dependente(s))
+
+- `main.dart`
+
 ### `dashboard_desktop_screen.dart` — 🟡 MÉDIO (1 dependente(s))
 
 - `main_desktop.dart`
@@ -1565,6 +1592,10 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 - `login_page.dart`
 
+### `update_service.dart` — 🟡 MÉDIO (1 dependente(s))
+
+- `update_checker_screen.dart`
+
 ### `planta_diadema_config.dart` — 🟡 MÉDIO (1 dependente(s))
 
 - `planta_navegador_widget.dart`
@@ -1604,6 +1635,9 @@ dependencies:
   file_picker: ^8.0.0
   excel: ^4.0.6
   csv: ^6.0.0
+  http: ^1.2.2
+  package_info_plus: ^8.0.0
+  open_filex: ^4.4.0
 
 dev_dependencies:
   flutter_test:
@@ -1670,6 +1704,8 @@ _Telas ficam em `lib/ui/`. Para nova tela: crie o arquivo na pasta adequada (des
   > Tela da interface — `PlantArea`, `PlantLayout`. Serialização JSON/Map.
 - `lib/ui/desktop/screens/relatorio_screen.dart` — `class RelatorioScreen`, `class _RelatorioScreenState`
   > Tela da interface — `RelatorioScreen`, `_RelatorioScreenState`. Suporta `copyWith`.
+- `lib/ui/update_checker_screen.dart` — `class UpdateCheckerScreen`, `class _UpdateCheckerScreenState`, `class _DialogAtualizacao`
+  > Tela da interface — `UpdateCheckerScreen`, `_UpdateCheckerScreenState`.
 
 ### 🗃️ Adicionar ou modificar campo Hive (dado local)
 
@@ -1732,6 +1768,8 @@ _Serviços encapsulam regras independentes de UI. Lógica que envolve múltiplos
   > Serviço de negócio — expõe: toMap, gerarRelatorio, getCodigosDivergentes, marcarDivergenciasParaC3(). Serialização JSON/Map. ⚠️ Acessa Firestore diretamente (coleções: inventarios, estoque, lancamentos) — considere mover para um repositório.
 - `lib/services/sync_service.dart` — `class SyncService`
   > Serviço de negócio — expõe: runOnce, schedule, cancel, unawaited(). Serialização JSON/Map. ⚠️ Acessa Firestore diretamente (coleções: lancamentos) — considere mover para um repositório.
+- `lib/services/update_service.dart` — `class ReleaseInfo`, `class UpdateService`
+  > Serviço de negócio — expõe: verificarAtualizacao, baixarApk, onConcluido().
 - `lib/services/user_service.dart` — `class UserService`
   > Serviço de negócio — expõe: criarPerfil, buscarPerfil, buscarNickname, atualizarPerfil(). ⚠️ Acessa Firestore diretamente (coleções: users) — considere mover para um repositório.
 
@@ -1806,4 +1844,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 24/04/2026 18:29:26_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 01/05/2026 13:18:42_
