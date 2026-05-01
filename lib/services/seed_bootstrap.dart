@@ -2,10 +2,12 @@
 import 'package:hive/hive.dart';
 import 'package:lego/data/local/hive_boxes.dart';
 import 'package:lego/services/seed_importer.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class SeedBootstrap {
   static const _stateBox = HiveBoxes.appStateBox;
   static const _seedFlagKey = 'seed_v1_done';
+  static const _seedVersionKey = 'seed_app_version';
 
   /// ✅ NOVO: Versão COM progresso via Stream
   static Stream<SyncProgress> ensureSeedOnceWithProgress({
@@ -23,10 +25,14 @@ class SeedBootstrap {
         ? Future.value(Hive.box(_stateBox))
         : Hive.openBox(_stateBox));
 
+    // 4) Versão atual do app
+    final packageInfo = await PackageInfo.fromPlatform();
+    final versaoAtual = packageInfo.version;
+    final versaoSeed = state.get(_seedVersionKey) as String?;
     final already = state.get(_seedFlagKey) == true;
 
-    // Se já importou e as boxes têm dados, retorna concluído imediatamente
-    if (already && produtos.isNotEmpty && barras.isNotEmpty) {
+    // Se já importou, as boxes têm dados E a versão não mudou, retorna concluído
+    if (already && produtos.isNotEmpty && barras.isNotEmpty && versaoSeed == versaoAtual) {
       yield SyncProgress(
         etapa: 'concluido',
         atual: 100,
@@ -37,14 +43,15 @@ class SeedBootstrap {
       return;
     }
 
-    // 4) Se estiver vazio OU flag não marcada, importa COM progresso
+    // 5) Se estiver vazio OU flag não marcada OU versão mudou, importa COM progresso
     try {
       await for (final progress in SeedImporter().importFromAssetJsonWithProgress(assetPath)) {
         yield progress;
 
-        // Se concluiu, marca flag
+        // Se concluiu, marca flag e salva versão atual
         if (progress.percentual >= 1.0 && progress.etapa == 'concluido') {
           await state.put(_seedFlagKey, true);
+          await state.put(_seedVersionKey, versaoAtual);
           await state.flush();
         }
       }
