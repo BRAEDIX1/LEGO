@@ -14,6 +14,7 @@ import 'package:lego/ui/login_page.dart';
 import 'package:lego/ui/first_sync_screen.dart';
 import 'package:lego/ui/update_checker_screen.dart';
 import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 import 'firebase_options.dart';
 
 Future<void> main() async {
@@ -57,12 +58,17 @@ class MyApp extends StatelessWidget {
 class _Bootstrapper extends StatelessWidget {
   const _Bootstrapper();
 
-  /// Verifica se o seed inicial já foi feito (mesma lógica do login_page.dart)
+  /// Verifica se o seed inicial já foi feito e se a versão ainda é a mesma
   Future<bool> _checkNeedsSync() async {
     try {
-      final state    = await Hive.openBox('app_state');
-      final seedDone = state.get('seed_v1_done') == true;
-      return !seedDone;
+      final state     = await Hive.openBox('app_state');
+      final seedDone  = state.get('seed_v1_done') == true;
+      if (!seedDone) return true;
+
+      final packageInfo  = await PackageInfo.fromPlatform();
+      final versaoAtual  = packageInfo.version;
+      final versaoSeed   = state.get('seed_app_version') as String?;
+      return versaoSeed != versaoAtual;
     } catch (e) {
       return true;
     }
