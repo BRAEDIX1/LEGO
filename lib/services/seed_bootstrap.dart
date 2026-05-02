@@ -1,8 +1,9 @@
 // lib/services/seed_bootstrap.dart
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:hive/hive.dart';
 import 'package:lego/data/local/hive_boxes.dart';
 import 'package:lego/services/seed_importer.dart';
-import 'package:package_info_plus/package_info_plus.dart';
 
 class SeedBootstrap {
   static const _stateBox = HiveBoxes.appStateBox;
@@ -26,8 +27,9 @@ class SeedBootstrap {
         : Hive.openBox(_stateBox));
 
     // 4) Versão atual do app
-    final packageInfo = await PackageInfo.fromPlatform();
-    final versaoAtual = packageInfo.version;
+    final jsonString = await rootBundle.loadString(assetPath);
+    final Map<String, dynamic> dump = json.decode(jsonString);
+    final versaoAtual = (dump['version'] ?? '').toString();
     final versaoSeed = state.get(_seedVersionKey) as String?;
     final already = state.get(_seedFlagKey) == true;
 

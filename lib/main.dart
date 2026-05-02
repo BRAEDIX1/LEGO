@@ -1,11 +1,11 @@
 // lib/main.dart - Mobile
-
+import 'dart:convert';
+import 'package:flutter/services.dart' show rootBundle;
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:hive/hive.dart';
-
 import 'package:lego/data/local/hive_boxes.dart';
 import 'package:lego/services/mobile_sync_service.dart';
 import 'package:lego/services/fixed_collections_sync.dart';
@@ -61,14 +61,15 @@ class _Bootstrapper extends StatelessWidget {
   /// Verifica se o seed inicial já foi feito e se a versão ainda é a mesma
   Future<bool> _checkNeedsSync() async {
     try {
-      final state     = await Hive.openBox('app_state');
-      final seedDone  = state.get('seed_v1_done') == true;
+      final state = await Hive.openBox('app_state');
+      final seedDone = state.get('seed_v1_done') == true;
       if (!seedDone) return true;
 
-      final packageInfo  = await PackageInfo.fromPlatform();
-      final versaoAtual  = packageInfo.version;
-      final versaoSeed   = state.get('seed_app_version') as String?;
-      return versaoSeed != versaoAtual;
+      final jsonString = await rootBundle.loadString('assets/firestore_dump.json');
+      final Map<String, dynamic> dump = json.decode(jsonString);
+      final versaoJson = (dump['version'] ?? '').toString();
+      final versaoSeed = state.get('seed_app_version') as String?;
+      return versaoSeed != versaoJson;
     } catch (e) {
       return true;
     }
