@@ -20,14 +20,22 @@ import 'firebase_options.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // Firebase
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // Hive
   await Hive.initFlutter();
   HiveBoxes.ensureAdapters();
+
+  // Verifica se o JSON foi atualizado
+  final state = await Hive.openBox('app_state');
+  final jsonString = await rootBundle.loadString('assets/firestore_dump.json');
+  final Map<String, dynamic> dump = json.decode(jsonString);
+  final versaoJson = (dump['version'] ?? '').toString();
+  final versaoSeed = state.get('seed_app_version') as String?;
+  if (versaoSeed != versaoJson) {
+    await state.put('needs_reseed', true);
+  }
 
   runApp(const MyApp());
 }
@@ -62,16 +70,10 @@ class _Bootstrapper extends StatelessWidget {
   Future<bool> _checkNeedsSync() async {
     try {
       final state = await Hive.openBox('app_state');
-      final seedDone = state.get('seed_v1_done') == true;
-      if (!seedDone) return true;
-
-      final jsonString = await rootBundle.loadString('assets/firestore_dump.json');
-      final Map<String, dynamic> dump = json.decode(jsonString);
-      final versaoJson = (dump['version'] ?? '').toString();
-      final versaoSeed = state.get('seed_app_version') as String?;
-      return versaoSeed != versaoJson;
+      final needsReseed = state.get('needs_reseed') == true;
+      return needsReseed;
     } catch (e) {
-      return true;
+      return false;
     }
   }
 

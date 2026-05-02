@@ -1,4 +1,7 @@
 // lib/ui/first_sync_screen.dart
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:hive/hive.dart';
+import 'package:lego/ui/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:lego/services/seed_bootstrap.dart';
 import 'package:lego/services/seed_importer.dart';
@@ -35,10 +38,16 @@ class FirstSyncScreen extends StatelessWidget {
 
             // Se concluiu, navegar para HomePage
             if (progress.percentual >= 1.0 && progress.etapa == 'concluido') {
-              WidgetsBinding.instance.addPostFrameCallback((_) {
+              WidgetsBinding.instance.addPostFrameCallback((_) async {
+                final state = await Hive.openBox('app_state');
+                await state.put('needs_reseed', false);
+                final user = FirebaseAuth.instance.currentUser;
+                if (!context.mounted) return;
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(builder: (_) => const HomePage()),
+                  MaterialPageRoute(
+                    builder: (_) => user != null ? const HomePage() : const LoginPage(),
+                  ),
                 );
               });
             }
