@@ -54,6 +54,24 @@ class _LoginPageState extends State<LoginPage> {
     super.dispose();
   }
 
+  Future<void> _testarClearHive() async {
+    try {
+      final state = Hive.isBoxOpen('app_state')
+          ? Hive.box('app_state')
+          : await Hive.openBox('app_state');
+      await state.delete('last_seeded_version_code');
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Version code resetado. Reinicie o app.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
+
   String? _validateEmail(String? v) {
     if (v == null || v.trim().isEmpty) return 'Informe o e-mail';
     final email = v.trim();
@@ -271,6 +289,10 @@ class _LoginPageState extends State<LoginPage> {
     final theme = Theme.of(context);
 
     return Scaffold(
+      floatingActionButton: FloatingActionButton(
+        onPressed: _testarClearHive,
+        child: const Icon(Icons.delete),
+      ),
       bottomNavigationBar: _versao.isEmpty
           ? null
           : Padding(

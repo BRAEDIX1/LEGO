@@ -6,6 +6,7 @@ import 'package:flutter/material.dart';
 import 'package:lego/services/seed_bootstrap.dart';
 import 'package:lego/services/seed_importer.dart';
 import 'package:lego/ui/home_page.dart';
+import 'package:package_info_plus/package_info_plus.dart';
 
 class FirstSyncScreen extends StatelessWidget {
   const FirstSyncScreen({super.key});
@@ -39,8 +40,12 @@ class FirstSyncScreen extends StatelessWidget {
             // Se concluiu, navegar para HomePage
             if (progress.percentual >= 1.0 && progress.etapa == 'concluido') {
               WidgetsBinding.instance.addPostFrameCallback((_) async {
-                final state = await Hive.openBox('app_state');
-                await state.put('needs_reseed', false);
+                final packageInfo = await PackageInfo.fromPlatform();
+                final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+                final state = Hive.isBoxOpen('app_state')
+                    ? Hive.box('app_state')
+                    : await Hive.openBox('app_state');
+                await state.put('last_seeded_version_code', currentBuild);
                 final user = FirebaseAuth.instance.currentUser;
                 if (!context.mounted) return;
                 Navigator.pushReplacement(

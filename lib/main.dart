@@ -27,16 +27,6 @@ Future<void> main() async {
   await Hive.initFlutter();
   HiveBoxes.ensureAdapters();
 
-  // Verifica se o JSON foi atualizado
-  final state = await Hive.openBox('app_state');
-  final jsonString = await rootBundle.loadString('assets/firestore_dump.json');
-  final Map<String, dynamic> dump = json.decode(jsonString);
-  final versaoJson = (dump['version'] ?? '').toString();
-  final versaoSeed = state.get('seed_app_version') as String?;
-  if (versaoSeed != versaoJson) {
-    await state.put('needs_reseed', true);
-  }
-
   runApp(const MyApp());
 }
 
@@ -63,43 +53,48 @@ class MyApp extends StatelessWidget {
 }
 
 /// Decide qual tela abrir e garante que as boxes do usuário estejam prontas.
-class _Bootstrapper extends StatelessWidget {
+class _Bootstrapper extends StatefulWidget {
   const _Bootstrapper();
 
-  /// Verifica se o seed inicial já foi feito e se a versão ainda é a mesma
+  @override
+  State<_Bootstrapper> createState() => _BootstrapperState();
+}
+
+class _BootstrapperState extends State<_Bootstrapper> {
+  late final Future<Widget> _startPageFuture;
+
+  @override
+  void initState() {
+    super.initState();
+    _startPageFuture = _decideStartPage();
+  }
+
   Future<bool> _checkNeedsSync() async {
-    try {
-      final state = await Hive.openBox('app_state');
-      final needsReseed = state.get('needs_reseed') == true;
-      return needsReseed;
-    } catch (e) {
-      return false;
-    }
+    final packageInfo = await PackageInfo.fromPlatform();
+    final currentBuild = int.tryParse(packageInfo.buildNumber) ?? 0;
+    final state = Hive.isBoxOpen('app_state')
+        ? Hive.box('app_state')
+        : await Hive.openBox('app_state');
+    final lastSeeded = state.get('last_seeded_version_code');
+    final last = lastSeeded is int ? lastSeeded : 0;
+    return currentBuild > last;
   }
 
   Future<Widget> _decideStartPage() async {
+    final needsSync = await _checkNeedsSync();
+    if (needsSync) {
+      return const FirstSyncScreen();
+    }
+
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) {
       return const LoginPage();
     }
 
     try {
-      // Abre boxes do usuário
       await HiveBoxes.openUserLancamentos(user.uid);
-
-      // ✅ Inicia listener de versão — detecta atualizações do Firestore
-      // em tempo real e sincroniza automaticamente quando há mudança.
       FixedCollectionsSync().iniciarListenerVersao();
-
-      // Verifica se o seed já foi feito
-      final needsSync = await _checkNeedsSync();
-      if (needsSync) {
-        return const FirstSyncScreen();
-      }
-
-      // Seed já feito — inicializa serviço e vai para home
       await MobileSyncService().inicializar();
-
     } catch (e) {
       debugPrint('Falha na inicialização: $e');
       return const LoginPage();
@@ -111,7 +106,7 @@ class _Bootstrapper extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FutureBuilder<Widget>(
-      future: _decideStartPage(),
+      future: _startPageFuture,
       builder: (context, snapshot) {
         if (snapshot.connectionState != ConnectionState.done) {
           return const Scaffold(
