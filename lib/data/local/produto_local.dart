@@ -10,6 +10,7 @@ class ProdutoLocal {
   @HiveField(2) String unidade;
   @HiveField(3) String origem; // 'gases' ou 'materiais'
   @HiveField(4) DateTime? updatedAt;
+  @HiveField(5) double? volume;
 
   ProdutoLocal({
     required this.codigo,
@@ -17,5 +18,6 @@ class ProdutoLocal {
     required this.unidade,
     required this.origem,
     this.updatedAt,
+    this.volume,
   });
 }

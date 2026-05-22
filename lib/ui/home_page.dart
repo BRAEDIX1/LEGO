@@ -1823,6 +1823,7 @@ class _HomePageState extends State<HomePage> {
   String? _statusContagem;
   String? _localizacaoId;    // ⭐ ID da área (ex: ENCHIMENTO_OXIGENIO)
   String? _localizacaoNome;  // ⭐ Nome da área para exibição
+  double? _volumeProduto;
   DateTime? _localizacaoSetadaEm; // ⭐ Momento em que a localização foi setada
 
   // Tempo máximo de validade da localização (minutos)
@@ -2297,6 +2298,7 @@ class _HomePageState extends State<HomePage> {
         _descricao = p.descricao;
         _unidade = p.unidade;
         _colecaoEncontrada = p.origem;
+        _volumeProduto = p.volume;
         _viaCodigo = true;
         _viaTag = false;
         debugPrint('Produto encontrado: ${_descricao}, coleção: $_colecaoEncontrada');
@@ -2445,6 +2447,7 @@ class _HomePageState extends State<HomePage> {
         _descricao = produto.descricao;
         _unidade = produto.unidade;
         _colecaoEncontrada = produto.origem;
+        _volumeProduto = produto.volume;
         _cheioCtrl.text = '1';
         _vazioCtrl.text = '0';
       });
@@ -2636,7 +2639,7 @@ class _HomePageState extends State<HomePage> {
         vazio: vazio,
         lote: lote.isEmpty ? null : lote,  // ✅ Null se vazio
         tag: tag.isEmpty ? null : tag,      // ✅ Null se vazio
-        volume: null,
+        volume: _volumeProduto,
         registro: TipoRegistro.automatico,
         localizacaoId:   _localizacaoId,    // ⭐ LOCALIZAÇÃO
         localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
@@ -2661,6 +2664,7 @@ class _HomePageState extends State<HomePage> {
         _viaTag = false;
         _viaCodigo = false;
         _tagAtual = null;
+        _volumeProduto = null;
       });
 
       // FocusScope.of(context).unfocus();

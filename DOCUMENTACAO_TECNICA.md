@@ -1,6 +1,6 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 01/05/2026 16:35:33  
+> **Gerado em:** 16/05/2026 20:37:48  
 > **Projeto:** `C:\Users\Dell\LEGO`  
 > **Arquivos analisados:** 74 principais + 4 gerados automaticamente
 
@@ -41,7 +41,7 @@
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **74** | **26,527 linhas** |
+| **Total**             | **74** | **26,575 linhas** |
 
 ### Saúde do projeto
 
@@ -73,7 +73,7 @@
 📁 lib/
   📄 firebase_options.dart  (84 linhas)
   📄 hive_probe_strict.dart  (145 linhas)
-  🚀 main.dart  (117 linhas)
+  🚀 main.dart  (121 linhas)
   🚀 main_desktop.dart  (260 linhas)
   📄 test_hive.dart  (78 linhas)
   📄 test_hive_seed.dart  (218 linhas)
@@ -112,7 +112,7 @@
     ⚙️ mobile_sync_service.dart  (494 linhas)
     📄 offline_bootstrap.dart  (44 linhas)
     ⚙️ relatorio_service.dart  (582 linhas)
-    📄 seed_bootstrap.dart  (78 linhas)
+    📄 seed_bootstrap.dart  (86 linhas)
     📄 seed_importer.dart  (236 linhas)
     📄 sync_diagnostics.dart  (38 linhas)
     ⚙️ sync_service.dart  (92 linhas)
@@ -121,11 +121,11 @@
   📁 ui/
     🖥️ contagem_choice_page.dart  (63 linhas)
     🖥️ diagnostics_page.dart  (107 linhas)
-    🖥️ first_sync_screen.dart  (294 linhas)
+    🖥️ first_sync_screen.dart  (308 linhas)
     🖥️ handover_page.dart  (28 linhas)
     🖥️ home_page.dart  (3616 linhas)  ⚠️
     🖥️ home_page.hive.dart  (99 linhas)
-    🖥️ login_page.dart  (580 linhas)
+    🖥️ login_page.dart  (602 linhas)
     🖥️ update_checker_screen.dart  (213 linhas)
     📁 desktop/
       📁 screens/
@@ -405,11 +405,11 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Entry point mobile — inicializa Firebase, Hive e roteamento.
 
-- **Linhas:** 117
-- **Declarações:** `class MyApp`, `class _Bootstrapper`
+- **Linhas:** 121
+- **Declarações:** `class MyApp`, `class _Bootstrapper`, `class _BootstrapperState`
 - **Métodos públicos:** `main()`, `runApp()`
 - **Importa (locais):** `hive_boxes.dart`, `mobile_sync_service.dart`, `fixed_collections_sync.dart`, `home_page.dart`, `login_page.dart`, `first_sync_screen.dart`, `update_checker_screen.dart`, `modo_operacao_screen.dart`, `firebase_options.dart`
-- **Pacotes:** firebase_core, firebase_auth, hive_flutter, hive
+- **Pacotes:** firebase_core, firebase_auth, hive_flutter, hive, package_info_plus
 - **Importado por:** `widget_test.dart`
 - **Rotas:** `/login`, `/home`, `/modo_operacao`
 
@@ -780,11 +780,11 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Verifica e dispara o seed inicial de dados mestres (produtos, barras).
 
-- **Linhas:** 78
+- **Linhas:** 86
 - **Declarações:** `class SeedBootstrap`
 - **Métodos públicos:** `ensureSeedOnceWithProgress()`, `ensureSeedOnce()`
 - **Importa (locais):** `hive_boxes.dart`, `seed_importer.dart`
-- **Pacotes:** hive, package_info_plus
+- **Pacotes:** hive
 - **Importado por:** `auth_service.dart`, `first_sync_screen.dart`
 
 #### `seed_importer.dart` — 📄  Dart
@@ -870,9 +870,10 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `FirstSyncScreen`.
 
-- **Linhas:** 294
+- **Linhas:** 308
 - **Declarações:** `class FirstSyncScreen`
-- **Importa (locais):** `seed_bootstrap.dart`, `seed_importer.dart`, `home_page.dart`
+- **Importa (locais):** `login_page.dart`, `seed_bootstrap.dart`, `seed_importer.dart`, `home_page.dart`
+- **Pacotes:** firebase_auth, hive, package_info_plus
 - **Importado por:** `main.dart`, `login_page.dart`
 
 #### `handover_page.dart` — 🖥️  Tela
@@ -909,13 +910,13 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `LoginPage`, `_LoginPageState`. Suporta `copyWith`.
 
-- **Linhas:** 580
+- **Linhas:** 602
 - **Declarações:** `class LoginPage`, `class _LoginPageState`
 - **Métodos públicos:** `setState()`
 - **Recursos:** `copyWith`
 - **Importa (locais):** `auth_service.dart`, `home_page.dart`, `first_sync_screen.dart`, `fixed_collections_sync.dart`
 - **Pacotes:** firebase_auth, package_info_plus, hive
-- **Importado por:** `main.dart`
+- **Importado por:** `main.dart`, `first_sync_screen.dart`
 
 #### `update_checker_screen.dart` — 🖥️  Tela
 
@@ -1238,18 +1239,18 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 | 17 | `participante.dart` | 3 | `controle_contagem_screen.dart`, `detalhe_inventario_screen.dart`, `participantes_screen.dart` |
 | 18 | `relatorio_screen.dart` | 3 | `dashboard_desktop_screen.dart`, `detalhe_inventario_screen.dart`, `historico_screen.dart` |
 | 19 | `user_service.dart` | 2 | `lancamentos_repository.dart`, `auth_service.dart` |
-| 20 | `first_sync_screen.dart` | 2 | `main.dart`, `login_page.dart` |
-| 21 | `modo_operacao_screen.dart` | 2 | `main.dart`, `inventario_ativo_widget.dart` |
-| 22 | `firebase_options.dart` | 2 | `main.dart`, `main_desktop.dart` |
-| 23 | `connectivity_service.dart` | 2 | `auth_service.dart`, `offline_bootstrap.dart` |
-| 24 | `seed_bootstrap.dart` | 2 | `auth_service.dart`, `first_sync_screen.dart` |
-| 25 | `sync_service.dart` | 2 | `connectivity_service.dart`, `home_page.dart` |
-| 26 | `app_state.dart` | 2 | `fixed_collections_sync.dart`, `contagem_choice_page.dart` |
-| 27 | `estoque_service.dart` | 2 | `criar_inventario_screen.dart`, `importar_estoque_screen.dart` |
-| 28 | `participantes_screen.dart` | 2 | `dashboard_desktop_screen.dart`, `dashboard_screen.dart` |
-| 29 | `produtos_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
-| 30 | `barras_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
-| 31 | `login_page.dart` | 1 | `main.dart` |
+| 20 | `login_page.dart` | 2 | `main.dart`, `first_sync_screen.dart` |
+| 21 | `first_sync_screen.dart` | 2 | `main.dart`, `login_page.dart` |
+| 22 | `modo_operacao_screen.dart` | 2 | `main.dart`, `inventario_ativo_widget.dart` |
+| 23 | `firebase_options.dart` | 2 | `main.dart`, `main_desktop.dart` |
+| 24 | `connectivity_service.dart` | 2 | `auth_service.dart`, `offline_bootstrap.dart` |
+| 25 | `seed_bootstrap.dart` | 2 | `auth_service.dart`, `first_sync_screen.dart` |
+| 26 | `sync_service.dart` | 2 | `connectivity_service.dart`, `home_page.dart` |
+| 27 | `app_state.dart` | 2 | `fixed_collections_sync.dart`, `contagem_choice_page.dart` |
+| 28 | `estoque_service.dart` | 2 | `criar_inventario_screen.dart`, `importar_estoque_screen.dart` |
+| 29 | `participantes_screen.dart` | 2 | `dashboard_desktop_screen.dart`, `dashboard_screen.dart` |
+| 30 | `produtos_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
+| 31 | `barras_repository.dart` | 2 | `home_page.dart`, `home_page.hive.dart` |
 | 32 | `update_checker_screen.dart` | 1 | `main.dart` |
 | 33 | `dashboard_desktop_screen.dart` | 1 | `main_desktop.dart` |
 | 34 | `user_profile.dart` | 1 | `user_service.dart` |
@@ -1437,6 +1438,11 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 - `auth_service.dart`
 - `lancamentos_repository.dart`
 
+### `login_page.dart` — 🟡 MÉDIO (2 dependente(s))
+
+- `first_sync_screen.dart`
+- `main.dart`
+
 ### `first_sync_screen.dart` — 🟡 MÉDIO (2 dependente(s))
 
 - `login_page.dart`
@@ -1491,10 +1497,6 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 - `home_page.dart`
 - `home_page.hive.dart`
-
-### `login_page.dart` — 🟡 MÉDIO (1 dependente(s))
-
-- `main.dart`
 
 ### `update_checker_screen.dart` — 🟡 MÉDIO (1 dependente(s))
 
@@ -1844,4 +1846,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 01/05/2026 16:35:33_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 16/05/2026 20:37:48_

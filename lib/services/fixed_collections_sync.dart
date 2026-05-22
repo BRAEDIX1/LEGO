@@ -182,6 +182,7 @@ class FixedCollectionsSync {
             updatedAt: (data['updatedAt'] is Timestamp)
                 ? (data['updatedAt'] as Timestamp).toDate()
                 : DateTime.tryParse((data['updatedAt'] ?? '').toString()),
+            volume: (data['volume'] as num?)?.toDouble(),
           ),
         );
         count++;
