@@ -14,6 +14,7 @@ import 'dart:async';
 import 'package:lego/data/repositories/lancamentos_repository.dart' show CleanupStats, CleanupResult;
 import 'package:hive/hive.dart';
 import 'package:flutter/services.dart';
+import 'package:audioplayers/audioplayers.dart';
 
 class _Lancamento {
   final LancStatus status;
@@ -2556,6 +2557,8 @@ class _HomePageState extends State<HomePage> {
   final _ordemServicoFocus = FocusNode();
   final _listScroll = ScrollController();
   final _tagQueue = Queue<String>();
+  // Player reutilizável para o alerta sonoro de tag não encontrada
+  final AudioPlayer _alertPlayer = AudioPlayer();
   final _cache = <String, Map<String, dynamic>>{};
   final _inventarioService = InventarioService();
   TextEditingController? _buscaCtrl;
@@ -2984,6 +2987,7 @@ class _HomePageState extends State<HomePage> {
     _loteFocus.dispose();
     _ordemServicoFocus.dispose();
     _listScroll.dispose();
+    _alertPlayer.dispose();
     super.dispose();
   }
 
@@ -3067,6 +3071,23 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // Alerta sonoro (sino) + vibração quando uma tag lida não é encontrada.
+  // Importante no fluxo de leitura contínua: o operador pode não estar
+  // olhando a tela e precisa ser avisado de que aquela leitura falhou.
+  Future<void> _alertarTagNaoEncontrada() async {
+    // Vibração imediata (não depende de áudio carregar)
+    HapticFeedback.heavyImpact();
+    try {
+      // Reinicia para permitir toques sucessivos rápidos
+      await _alertPlayer.stop();
+      await _alertPlayer.play(AssetSource('sounds/sino_alerta.mp3'));
+    } catch (e) {
+      debugPrint('Falha ao tocar alerta sonoro: $e');
+      // Fallback nativo caso o áudio falhe
+      SystemSound.play(SystemSoundType.alert);
+    }
+  }
+
   Future<void> _buscarBarras() async {
     final tag = _barrasCtrl.text.trim();
     _tagAtual = tag;
@@ -3133,6 +3154,10 @@ class _HomePageState extends State<HomePage> {
       }
 
       if (barra == null) {
+        // Tag não encontrada no Hive: alerta sonoro + vibração para o operador
+        // perceber mesmo sem olhar a tela durante leitura contínua.
+        await _alertarTagNaoEncontrada();
+
         // Oferece cadastro manual
         final confirma = await showDialog<bool>(
           context: context,
