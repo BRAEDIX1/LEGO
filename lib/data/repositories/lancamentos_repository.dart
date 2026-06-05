@@ -300,19 +300,33 @@ class LancamentosRepository {
     final current = _getByIdLocalSync(box, idLocal);
     if (current == null) return;
 
+    // Remove SEMPRE do Hive local primeiro — a remoção visual e a liberação
+    // da tag não podem depender da conectividade. Se o Firestore falhar
+    // (offline/4G instável no CT60), a exclusão remota fica pendente, mas o
+    // registro local já saiu e a tag pode ser relida.
+    await box.delete(idLocal);
+
     final docId = '${uid}_$idLocal';
     try {
       await FirebaseFirestore.instance
           .collection('lancamentos')
           .doc(docId)
           .delete();
-      await box.delete(idLocal);
     } catch (e) {
-      final flagged = current.copyWith(
-        status: LancStatus.pending,
-        errorCode: 'DELETE_PENDING',
-      );
-      await box.put(idLocal, flagged);
+      // Exclusão remota falhou: registra a intenção para o SyncService
+      // reprocessar depois, sem reinserir o registro no Hive local.
+      debugPrint('⚠️ Delete remoto pendente para $docId: $e');
+      try {
+        final prefs = await SharedPreferences.getInstance();
+        final pendentes = prefs.getStringList('delete_pending') ?? <String>[];
+        if (!pendentes.contains(docId)) {
+          pendentes.add(docId);
+          await prefs.setStringList('delete_pending', pendentes);
+        }
+      } catch (_) {
+        // Se nem o registro da pendência funcionar, o item já saiu do Hive;
+        // a divergência remota será resolvida em sincronização futura.
+      }
     }
   }
 
@@ -345,7 +359,11 @@ class LancamentosRepository {
   Future<bool> tagJaExiste(String tag) async {
     if (tag.isEmpty) return false;
     final box = await _openBox();
-    return box.values.any((lanc) => lanc.tag == tag);
+    // Ignora registros marcados para exclusão (compatibilidade com dados
+    // antigos que ficaram com a flag DELETE_PENDING antes da correção do delete).
+    return box.values.any(
+      (lanc) => lanc.tag == tag && lanc.errorCode != 'DELETE_PENDING',
+    );
   }
 
   // ========== ESTATÍSTICAS DO DISPOSITIVO (TODOS OS USUÁRIOS) ==========

@@ -752,10 +752,100 @@ class _ManualCleanupDialogState extends State<_ManualCleanupDialog> {
 
     setState(() => isProcessing = true);
 
+    // ── PROTEÇÃO CONTRA PERDA DE PENDENTES ───────────────────────────
+    // Varre o APARELHO INTEIRO (todas as boxes / todos os usuários) e conta
+    // os pendentes. Tenta sincronizar os do usuário logado; os de outros
+    // usuários não podem ser enviados daqui (sem credenciais), então apenas
+    // entram no aviso. Em ambos os casos, exige confirmação se algo sobrar.
+    try {
+      CleanupStats stats = await widget.repo.getCleanupStats();
+      int pendentesDispositivo = stats.pendingDevice;
+
+      if (pendentesDispositivo > 0) {
+        // 1ª tentativa: sincronizar os pendentes do usuário logado
+        final uid = FirebaseAuth.instance.currentUser?.uid;
+        if (uid != null) {
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('Sincronizando pendentes antes de limpar...'),
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
+          try {
+            await SyncService.syncLancamentos(uid);
+          } catch (e) {
+            debugPrint('Falha ao sincronizar antes da limpeza: $e');
+          }
+          // Reconta o dispositivo inteiro após a tentativa
+          stats = await widget.repo.getCleanupStats();
+          pendentesDispositivo = stats.pendingDevice;
+        }
+      }
+
+      // Se ainda houver pendentes em qualquer usuário do aparelho, confirma
+      if (pendentesDispositivo > 0) {
+        if (!mounted) return;
+
+        // Detalha quantos pendentes pertencem a outros usuários (não enviáveis)
+        final uidAtual = FirebaseAuth.instance.currentUser?.uid;
+        int pendentesOutros = 0;
+        for (final u in stats.perUser) {
+          if (u.uid != uidAtual) pendentesOutros += u.pending;
+        }
+        final detalheOutros = pendentesOutros > 0
+            ? '\n\nDesses, $pendentesOutros pertence(m) a OUTRO(S) usuário(s) deste '
+              'aparelho e não podem ser enviados a partir do seu login.'
+            : '';
+
+        final confirmaPerda = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            icon: const Icon(Icons.warning_amber, color: Colors.red, size: 32),
+            title: const Text('Pendentes não sincronizados'),
+            content: Text(
+              'Ainda há $pendentesDispositivo lançamento(s) neste aparelho que NÃO '
+              'foram enviados ao servidor (provavelmente sem conexão).$detalheOutros'
+              '\n\nSe limpar agora, esses dados serão PERDIDOS DEFINITIVAMENTE — '
+              'não estão no servidor nem ficarão no aparelho.\n\n'
+              'Deseja limpar mesmo assim?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton(
+                style: FilledButton.styleFrom(backgroundColor: Colors.red),
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Limpar e perder pendentes'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirmaPerda != true) {
+          // Operador desistiu — não limpa nada
+          if (mounted) setState(() => isProcessing = false);
+          return;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao verificar pendentes antes da limpeza: $e');
+      // Em caso de erro na verificação, segue o fluxo normal (não bloqueia)
+    }
+
     final result = await widget.repo.manualCleanup(
       includePending: true, // Parâmetro mantido por compatibilidade (ignorado)
       password: passwordController.text,
     );
+
+    // Após limpar todos os registros do Hive, esvazia também o cache de tags
+    // em memória, para que qualquer tag possa ser relida imediatamente.
+    if (result.success) {
+      _HomePageState._tagsCacheAtivo?.clear();
+    }
 
     if (!mounted) return;
 
@@ -2284,6 +2374,12 @@ Future<void> _excluir(BuildContext context, _LancamentoDoc doc, LancamentosRepos
 
   try {
     await repo.delete(doc.id);
+    // Libera a tag do cache em memória para permitir releitura imediata,
+    // sem precisar fechar o app.
+    final tagExcluida = doc.data.tag;
+    if (tagExcluida.isNotEmpty) {
+      _HomePageState._tagsCacheAtivo?.remove(tagExcluida);
+    }
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lançamento excluído')));
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao excluir: $e')));
@@ -2588,6 +2684,9 @@ class _HomePageState extends State<HomePage> {
   bool _aguardandoLiberacao = false;
   // ✅ ADICIONAR: Cache de TAGs já lançadas
   Set<String>? _tagsCache;
+  // Referência estática ao cache da instância ativa, para que a função global
+  // _excluir() possa remover a tag do cache em memória ao apagar um lançamento.
+  static Set<String>? _tagsCacheAtivo;
   // Solicitação de participação
   String? _contagemSolicitada;
   String? get _contagemSolicitadaLabel {
@@ -2725,11 +2824,13 @@ class _HomePageState extends State<HomePage> {
           .where((lanc) => lanc.tag != null && lanc.tag!.isNotEmpty)
           .map((lanc) => lanc.tag!)
           .toSet();
+      _tagsCacheAtivo = _tagsCache;
 
       debugPrint('✅ Cache de tags carregado: ${_tagsCache!.length} tags');
     } catch (e) {
       debugPrint('⚠️ Erro ao carregar cache de tags: $e');
       _tagsCache = <String>{};  // Cache vazio em caso de erro
+      _tagsCacheAtivo = _tagsCache;
     }
   }
 
@@ -3125,7 +3226,8 @@ class _HomePageState extends State<HomePage> {
 
     // Verificar cache imediatamente (sem await)
     if (_tagsCache != null && _tagsCache!.contains(tag)) {
-      // _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
+      await _alertarTagNaoEncontrada();
+      _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
       _barrasCtrl.clear();
       _barrasFocus.requestFocus();
       return;
@@ -3144,7 +3246,8 @@ class _HomePageState extends State<HomePage> {
           _viaTag = false;
           _viaCodigo = false;
         });
-        // _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
+        await _alertarTagNaoEncontrada();
+        _snack('⚠️ TAG já foi lançada anteriormente!', error: true);
         _barrasCtrl.clear();
         _barrasFocus.requestFocus();
         return;
