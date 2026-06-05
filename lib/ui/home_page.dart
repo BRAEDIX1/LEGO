@@ -1483,6 +1483,8 @@ class _CT60PagedLayout extends StatefulWidget {
     required this.localizacaoSetadaEm,
     required this.localizacaoTimeoutMin,
     required this.onAbrirLocalizacao,
+    required this.timerDesativado,
+    required this.onToggleTimer,
     required this.onBuscar,
     required this.onBuscarBarras,
     required this.onConfirmar,
@@ -1526,6 +1528,8 @@ class _CT60PagedLayout extends StatefulWidget {
   final DateTime? localizacaoSetadaEm;
   final int localizacaoTimeoutMin;
   final VoidCallback onAbrirLocalizacao;
+  final bool timerDesativado;
+  final VoidCallback onToggleTimer;
   final VoidCallback onBuscar;
   final VoidCallback onBuscarBarras;
   final VoidCallback onConfirmar;
@@ -1626,13 +1630,16 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
     final temLoc = widget.localizacaoId != null;
     final valida = widget.localizacaoValida;
     final expirada = temLoc && !valida;
+    final fixado = widget.timerDesativado;
     final restante = widget.localizacaoSetadaEm == null
         ? 0
         : widget.localizacaoTimeoutMin -
           DateTime.now().difference(widget.localizacaoSetadaEm!).inMinutes;
 
     final String texto;
-    if (valida) {
+    if (valida && fixado) {
+      texto = '${widget.localizacaoNome ?? widget.localizacaoId} · fixada';
+    } else if (valida) {
       texto = '${widget.localizacaoNome ?? widget.localizacaoId} · ${restante}min';
     } else if (expirada) {
       texto = 'Localização expirada — toque para renovar';
@@ -1640,43 +1647,69 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
       texto = 'Selecionar localização';
     }
 
-    return GestureDetector(
-      onTap: widget.onAbrirLocalizacao,
-      child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-        decoration: BoxDecoration(
-          color: valida ? Colors.green.shade50 : Colors.red.shade50,
-          borderRadius: BorderRadius.circular(20),
-          border: Border.all(
-            color: valida ? Colors.green : Colors.red,
-          ),
-        ),
-        child: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Icon(
-              valida ? Icons.location_on : Icons.warning_amber,
-              size: 16,
-              color: valida ? Colors.green.shade700 : Colors.red,
-            ),
-            const SizedBox(width: 4),
-            Flexible(
-              child: Text(
-                texto,
-                style: TextStyle(
-                  fontSize: 12,
-                  fontWeight: FontWeight.w600,
-                  color: valida ? Colors.green.shade800 : Colors.red.shade700,
+    return Row(
+      children: [
+        // Chip principal (toque para trocar de área)
+        Expanded(
+          child: GestureDetector(
+            onTap: widget.onAbrirLocalizacao,
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+              decoration: BoxDecoration(
+                color: valida ? Colors.green.shade50 : Colors.red.shade50,
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(
+                  color: valida ? Colors.green : Colors.red,
                 ),
-                overflow: TextOverflow.ellipsis,
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(
+                    valida ? Icons.location_on : Icons.warning_amber,
+                    size: 16,
+                    color: valida ? Colors.green.shade700 : Colors.red,
+                  ),
+                  const SizedBox(width: 4),
+                  Flexible(
+                    child: Text(
+                      texto,
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: valida ? Colors.green.shade800 : Colors.red.shade700,
+                      ),
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                  const SizedBox(width: 4),
+                  Icon(Icons.edit, size: 12,
+                      color: valida ? Colors.green.shade600 : Colors.red),
+                ],
               ),
             ),
-            const SizedBox(width: 4),
-            Icon(Icons.edit, size: 12,
-                color: valida ? Colors.green.shade600 : Colors.red),
-          ],
+          ),
         ),
-      ),
+        // Botão de fixar/desafixar o timer (só faz sentido com área selecionada)
+        if (temLoc) ...[
+          const SizedBox(width: 6),
+          GestureDetector(
+            onTap: widget.onToggleTimer,
+            child: Container(
+              padding: const EdgeInsets.all(6),
+              decoration: BoxDecoration(
+                color: fixado ? Colors.blue.shade600 : Colors.grey.shade200,
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                fixado ? Icons.lock_clock : Icons.timer_outlined,
+                size: 18,
+                color: fixado ? Colors.white : Colors.grey.shade700,
+              ),
+            ),
+          ),
+        ],
+      ],
     );
   }
 
@@ -2676,6 +2709,9 @@ class _HomePageState extends State<HomePage> {
   String? _localizacaoNome;  // ⭐ Nome da área para exibição
   double? _volumeProduto;
   DateTime? _localizacaoSetadaEm; // ⭐ Momento em que a localização foi setada
+  // Quando true, a localização não expira (operador fixou a área manualmente).
+  // É reativado automaticamente ao trocar de área, por segurança.
+  bool _timerLocalizacaoDesativado = false;
 
   // Tempo máximo de validade da localização (minutos)
   static const int _localizacaoTimeoutMin = 10;
@@ -2764,6 +2800,7 @@ class _HomePageState extends State<HomePage> {
         _localizacaoId        = area.id;
         _localizacaoNome      = area.nome;
         _localizacaoSetadaEm  = DateTime.now(); // ⭐ inicia o timer
+        _timerLocalizacaoDesativado = false;    // reativa o timer na troca de área
       });
       debugPrint('✅ Localização selecionada: \${area.id}');
     }
@@ -2771,9 +2808,31 @@ class _HomePageState extends State<HomePage> {
 
   // Verifica se a localização ainda está dentro do prazo de validade
   bool _localizacaoValida() {
-    if (_localizacaoId == null || _localizacaoSetadaEm == null) return false;
+    if (_localizacaoId == null) return false;
+    // Timer desativado: a área fica fixa até troca manual.
+    if (_timerLocalizacaoDesativado) return true;
+    if (_localizacaoSetadaEm == null) return false;
     final diferenca = DateTime.now().difference(_localizacaoSetadaEm!);
     return diferenca.inMinutes < _localizacaoTimeoutMin;
+  }
+
+  // Alterna entre timer ativo e área fixada. Ao reativar o timer, reinicia
+  // a contagem a partir de agora (não herda tempo já decorrido).
+  void _toggleTimerLocalizacao() {
+    if (_localizacaoId == null) {
+      _snack('Selecione uma área primeiro', error: true);
+      return;
+    }
+    setState(() {
+      _timerLocalizacaoDesativado = !_timerLocalizacaoDesativado;
+      if (!_timerLocalizacaoDesativado) {
+        // Reativou o timer: reinicia a contagem
+        _localizacaoSetadaEm = DateTime.now();
+      }
+    });
+    _snack(_timerLocalizacaoDesativado
+        ? 'Área fixada — o tempo não vai expirar até você trocar de área'
+        : 'Timer reativado — a área expira em $_localizacaoTimeoutMin min');
   }
 
   // ⭐ ADICIONAR ESTE MÉTODO COMPLETO
@@ -3781,14 +3840,18 @@ class _HomePageState extends State<HomePage> {
                     DateTime.now().difference(_localizacaoSetadaEm!).inMinutes;
               final valida = _localizacaoValida();
               return Text(
-                valida
-                    ? '⏱ Válida por mais $restante min'
-                    : '⚠️ Localização expirada',
+                _timerLocalizacaoDesativado
+                    ? '🔒 Área fixada (timer desativado)'
+                    : valida
+                        ? '⏱ Válida por mais $restante min'
+                        : '⚠️ Localização expirada',
                 style: TextStyle(
                   fontSize: 12,
-                  color: valida
-                      ? (restante <= 2 ? Colors.orange : Colors.green.shade700)
-                      : Colors.red,
+                  color: _timerLocalizacaoDesativado
+                      ? Colors.blue.shade700
+                      : valida
+                          ? (restante <= 2 ? Colors.orange : Colors.green.shade700)
+                          : Colors.red,
                   fontWeight: FontWeight.w500,
                 ),
               );
@@ -3803,10 +3866,24 @@ class _HomePageState extends State<HomePage> {
               ),
             ),
             SizedBox(height: 8),
-            TextButton.icon(
-              onPressed: _abrirSeletorLocalizacao,
-              icon: Icon(Icons.edit_location),
-              label: Text('Alterar Localização'),
+            Row(
+              children: [
+                TextButton.icon(
+                  onPressed: _abrirSeletorLocalizacao,
+                  icon: Icon(Icons.edit_location),
+                  label: Text('Alterar Localização'),
+                ),
+                const SizedBox(width: 8),
+                TextButton.icon(
+                  onPressed: _toggleTimerLocalizacao,
+                  icon: Icon(_timerLocalizacaoDesativado
+                      ? Icons.lock_clock
+                      : Icons.timer_outlined),
+                  label: Text(_timerLocalizacaoDesativado
+                      ? 'Reativar timer'
+                      : 'Fixar área'),
+                ),
+              ],
             ),
           ] else ...[
             SizedBox(height: 4),
@@ -3976,6 +4053,8 @@ class _HomePageState extends State<HomePage> {
               localizacaoSetadaEm: _localizacaoSetadaEm,
               localizacaoTimeoutMin: _localizacaoTimeoutMin,
               onAbrirLocalizacao: _abrirSeletorLocalizacao,
+              timerDesativado: _timerLocalizacaoDesativado,
+              onToggleTimer: _toggleTimerLocalizacao,
               // Callbacks
               onBuscar: _buscarProduto,
               onBuscarBarras: _buscarBarras,
