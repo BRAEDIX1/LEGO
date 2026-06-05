@@ -1,6 +1,6 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 16/05/2026 20:37:48  
+> **Gerado em:** 05/06/2026 09:15:44  
 > **Projeto:** `C:\Users\Dell\LEGO`  
 > **Arquivos analisados:** 74 principais + 4 gerados automaticamente
 
@@ -41,7 +41,7 @@
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **74** | **26,575 linhas** |
+| **Total**             | **74** | **26,582 linhas** |
 
 ### Saúde do projeto
 
@@ -85,7 +85,7 @@
       🗃️ barra_local.dart  (19 linhas)
       📄 hive_boxes.dart  (48 linhas)
       🗃️ lanc_local.dart  (162 linhas)
-      🗃️ produto_local.dart  (22 linhas)
+      🗃️ produto_local.dart  (24 linhas)
     📁 repositories/
       🏛️ barras_repository.dart  (22 linhas)
       🏛️ lancamentos_repository.dart  (658 linhas)
@@ -106,7 +106,7 @@
     ⚙️ estoque_service.dart  (466 linhas)
     ⚙️ excel_parser_service.dart  (397 linhas)
     ⚙️ exportar_excel_service.dart  (472 linhas)
-    📄 fixed_collections_sync.dart  (215 linhas)
+    📄 fixed_collections_sync.dart  (216 linhas)
     📄 hive_diagnostics.dart  (129 linhas)
     ⚙️ inventario_service.dart  (704 linhas)
     ⚙️ mobile_sync_service.dart  (494 linhas)
@@ -123,7 +123,7 @@
     🖥️ diagnostics_page.dart  (107 linhas)
     🖥️ first_sync_screen.dart  (308 linhas)
     🖥️ handover_page.dart  (28 linhas)
-    🖥️ home_page.dart  (3616 linhas)  ⚠️
+    🖥️ home_page.dart  (3620 linhas)  ⚠️
     🖥️ home_page.hive.dart  (99 linhas)
     🖥️ login_page.dart  (602 linhas)
     🖥️ update_checker_screen.dart  (213 linhas)
@@ -172,7 +172,7 @@
 - 🔴 **God File**: `detalhe_inventario_screen.dart` tem **985 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `participantes_screen.dart` tem **1058 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `relatorio_screen.dart` tem **1108 linhas**. Considere dividir em partes menores.
-- 🔴 **God File**: `home_page.dart` tem **3616 linhas**. Considere dividir em partes menores.
+- 🔴 **God File**: `home_page.dart` tem **3620 linhas**. Considere dividir em partes menores.
 - 🟠 **Violação de camada**: `controle_contagem_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `detalhe_inventario_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`, `estoque`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `historico_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`. Mova para um Repositório.
@@ -191,7 +191,7 @@
 | typeId | Classe | Arquivo | Campos | Próximo fieldId |
 |:------:|--------|---------|:------:|:---------------:|
 | 2 | `class AppState` | `app_state.dart` | 12 | **12** |
-| 31 | `class ProdutoLocal` | `produto_local.dart` | 5 | **5** |
+| 31 | `class ProdutoLocal` | `produto_local.dart` | 6 | **6** |
 | 32 | `class BarraLocal` | `barra_local.dart` | 4 | **4** |
 | 41 | `class LancLocal` | `lanc_local.dart` | 25 | **25** |
 
@@ -214,7 +214,7 @@
 | 10 | `int?` | `versaoBarras` |
 | 11 | `int?` | `versaoProdutos` |
 
-#### `produto_local.dart` — typeId `31` — próximo fieldId: `5`
+#### `produto_local.dart` — typeId `31` — próximo fieldId: `6`
 
 | fieldId | Tipo | Nome |
 |:-------:|------|------|
@@ -223,6 +223,7 @@
 | 2 | `String` | `unidade` |
 | 3 | `String` | `origem` |
 | 4 | `DateTime?` | `updatedAt` |
+| 5 | `double?` | `volume` |
 
 #### `barra_local.dart` — typeId `32` — próximo fieldId: `4`
 
@@ -504,12 +505,12 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 #### `produto_local.dart` — 🗃️  Modelo Hive
 
-> Modelo Hive (typeId 31) com 5 campos persistidos localmente: codigo, descricao, unidade, origem, updatedAt.
+> Modelo Hive (typeId 31) com 6 campos persistidos localmente: codigo, descricao, unidade, origem, updatedAt.
 
-- **Linhas:** 22
+- **Linhas:** 24
 - **Declarações:** `class ProdutoLocal`
-- **Hive:** typeId `31` | 5 campos | próximo fieldId: `5`
-- **Campos Hive:** `codigo`:`String`, `descricao`:`String`, `unidade`:`String`, `origem`:`String`, `updatedAt`:`DateTime?`
+- **Hive:** typeId `31` | 6 campos | próximo fieldId: `6`
+- **Campos Hive:** `codigo`:`String`, `descricao`:`String`, `unidade`:`String`, `origem`:`String`, `updatedAt`:`DateTime?`, `volume`:`double?`
 - **Pacotes:** hive
 - **Importado por:** `hive_boxes.dart`, `produtos_repository.dart`, `hive_probe_strict.dart`, `fixed_collections_sync.dart`, `hive_diagnostics.dart`, `seed_importer.dart`, `test_hive.dart`, `test_hive_seed.dart` _(+1)_
 
@@ -710,7 +711,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Sincroniza coleções fixas (produtos, barras) do Firestore para o Hive.
 
-- **Linhas:** 215
+- **Linhas:** 216
 - **Declarações:** `class FixedCollectionsSync`
 - **Métodos públicos:** `iniciarListenerVersao()`, `log()`, `pararListenerVersao()`, `fullSync()`, `ensureIncrementalInBackground()`
 - **Firestore:** `sistema` (stream), `barras` (leitura), `materiais` (leitura)
@@ -887,7 +888,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `_Lancamento`, `_Unset`. Suporta `copyWith`. ⚠️ Acessa Firestore diretamente (coleções: inventarios, participantes, lancamentos) — considere mover para um repositório.
 
-- **Linhas:** 3616
+- **Linhas:** 3620
 - **Declarações:** `class _Lancamento`, `class _Unset`, `class _LancamentoDoc`, `class _CadastroManualDialog`, `class _CadastroManualDialogState`, `class _ManualCleanupDialog`, `class _ManualCleanupDialogState`, `class _FormPane`, `class _LancamentosPane`, `class _LancamentosListAndTable`
 - **Métodos públicos:** `copyWith()`, `setState()`, `setStateLocal()`, `two()`, `showDialog()`
 - **Firestore:** `inventarios` (delete, leitura, stream), `participantes` (delete, leitura, stream), `lancamentos` (leitura)
@@ -1727,7 +1728,7 @@ _Para adicionar um campo:_
 - `lib/data/local/lanc_local.dart` — `enum LancStatus`, `enum TipoRegistro`, `class LancLocal`
   > Modelo Hive (typeId 41) com 25 campos persistidos localmente: idLocal, uid, codigo, descricao, unidade. Suporta `copyWith`. Serialização JSON/Map.
 - `lib/data/local/produto_local.dart` — `class ProdutoLocal`
-  > Modelo Hive (typeId 31) com 5 campos persistidos localmente: codigo, descricao, unidade, origem, updatedAt.
+  > Modelo Hive (typeId 31) com 6 campos persistidos localmente: codigo, descricao, unidade, origem, updatedAt.
 
 ### ☁️ Adicionar ou modificar dados no Firestore
 
@@ -1846,4 +1847,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 16/05/2026 20:37:48_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 05/06/2026 09:15:44_

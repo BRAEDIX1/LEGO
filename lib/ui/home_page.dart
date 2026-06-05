@@ -792,9 +792,10 @@ class _FormPane extends StatelessWidget {
 
   // ========== LAYOUT SMARTPHONE PORTRAIT ==========
   Widget _buildSmartphoneLayout(BuildContext context) {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
         // LINHA 1: Código + Tag
         Row(
           children: [
@@ -980,6 +981,7 @@ class _FormPane extends StatelessWidget {
           ],
         ),
       ],
+      ),
     );
   }
 
@@ -1213,6 +1215,626 @@ class _FormPane extends StatelessWidget {
             ordemServico,
             confirm,
           ],
+        ),
+      ],
+    );
+  }
+}
+
+// =====================================================================
+// _CT60PagedLayout — Layout exclusivo para smartphone portrait (CT60)
+// Página 0: Modo TAG (scanner, zero teclado)
+// Página 1: Modo Código (manual, scroll completo)
+// =====================================================================
+class _CT60PagedLayout extends StatefulWidget {
+  const _CT60PagedLayout({
+    required this.formKey,
+    required this.codigoCtrl,
+    required this.barrasCtrl,
+    required this.qtdCtrl,
+    required this.enderecoCtrl,
+    required this.cheioCtrl,
+    required this.vazioCtrl,
+    required this.loteCtrl,
+    required this.ordemServicoCtrl,
+    required this.codigoFocus,
+    required this.barrasFocus,
+    required this.qtdFocus,
+    required this.enderecoFocus,
+    required this.cheioFocus,
+    required this.vazioFocus,
+    required this.loteFocus,
+    required this.ordemServicoFocus,
+    required this.descricao,
+    required this.unidade,
+    required this.colecaoEncontrada,
+    required this.viaTag,
+    required this.viaCodigo,
+    required this.localizacaoId,
+    required this.localizacaoNome,
+    required this.localizacaoValida,
+    required this.localizacaoSetadaEm,
+    required this.localizacaoTimeoutMin,
+    required this.onAbrirLocalizacao,
+    required this.onBuscar,
+    required this.onBuscarBarras,
+    required this.onConfirmar,
+    required this.onSelecionarSugestao,
+    required this.onBuscarSugestoes,
+    required this.onLimparFormulario,
+    required this.validarCodigo,
+    required this.validarQuantidade,
+    required this.validarEndereco,
+    required this.validarCheio,
+    required this.validarVazio,
+    required this.uid,
+    required this.listScroll,
+  });
+
+  final GlobalKey<FormState> formKey;
+  final TextEditingController codigoCtrl;
+  final TextEditingController barrasCtrl;
+  final TextEditingController qtdCtrl;
+  final TextEditingController enderecoCtrl;
+  final TextEditingController cheioCtrl;
+  final TextEditingController vazioCtrl;
+  final TextEditingController loteCtrl;
+  final TextEditingController ordemServicoCtrl;
+  final FocusNode codigoFocus;
+  final FocusNode barrasFocus;
+  final FocusNode qtdFocus;
+  final FocusNode enderecoFocus;
+  final FocusNode cheioFocus;
+  final FocusNode vazioFocus;
+  final FocusNode loteFocus;
+  final FocusNode ordemServicoFocus;
+  final String? descricao;
+  final String? unidade;
+  final String? colecaoEncontrada;
+  final bool viaTag;
+  final bool viaCodigo;
+  final String? localizacaoId;
+  final String? localizacaoNome;
+  final bool localizacaoValida;
+  final DateTime? localizacaoSetadaEm;
+  final int localizacaoTimeoutMin;
+  final VoidCallback onAbrirLocalizacao;
+  final VoidCallback onBuscar;
+  final VoidCallback onBuscarBarras;
+  final VoidCallback onConfirmar;
+  final void Function(String) onSelecionarSugestao;
+  final Future<List<String>> Function(String) onBuscarSugestoes;
+  final VoidCallback onLimparFormulario;
+  final String? Function(String?) validarCodigo;
+  final String? Function(String?) validarQuantidade;
+  final String? Function(String?) validarEndereco;
+  final String? Function(String?) validarCheio;
+  final String? Function(String?) validarVazio;
+  final String? uid;
+  final ScrollController listScroll;
+
+  @override
+  State<_CT60PagedLayout> createState() => _CT60PagedLayoutState();
+}
+
+class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
+  final _pageController = PageController();
+  int _currentPage = 0;
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
+  // Verifica se há um lançamento em andamento (algum campo preenchido).
+  // Enquanto verdadeiro, a troca de aba fica bloqueada.
+  bool get _temLancamentoEmAndamento {
+    return widget.codigoCtrl.text.trim().isNotEmpty ||
+        widget.barrasCtrl.text.trim().isNotEmpty ||
+        widget.qtdCtrl.text.trim().isNotEmpty ||
+        widget.enderecoCtrl.text.trim().isNotEmpty ||
+        widget.cheioCtrl.text.trim().isNotEmpty ||
+        widget.vazioCtrl.text.trim().isNotEmpty ||
+        widget.loteCtrl.text.trim().isNotEmpty ||
+        widget.ordemServicoCtrl.text.trim().isNotEmpty ||
+        widget.descricao != null;
+  }
+
+  // Diálogo exibido quando o operador tenta trocar de aba com dados pendentes.
+  Future<void> _avisarLancamentoPendente() async {
+    FocusScope.of(context).unfocus();
+    await showDialog<void>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.warning_amber, color: Colors.orange, size: 32),
+        title: const Text('Lançamento não finalizado'),
+        content: const Text(
+          'Há um produto em andamento que ainda não foi confirmado.\n\n'
+          'Finalize o lançamento ou limpe os campos antes de trocar de modo.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Continuar preenchendo'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              widget.onLimparFormulario();
+              Navigator.pop(ctx);
+            },
+            icon: const Icon(Icons.cleaning_services, size: 18),
+            label: const Text('Limpar campos'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  InputDecoration _dec(BuildContext context, {
+    required String label,
+    String? hint,
+    Widget? suffix,
+    bool readOnly = false,
+  }) {
+    final theme = Theme.of(context);
+    return InputDecoration(
+      labelText: label,
+      hintText: hint,
+      suffixIcon: suffix,
+      filled: true,
+      isDense: true,
+      enabled: !readOnly,
+      contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+      border: OutlineInputBorder(borderRadius: BorderRadius.circular(14)),
+      focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(14),
+        borderSide: BorderSide(color: theme.colorScheme.primary, width: 2.0),
+      ),
+    );
+  }
+
+  // Chip compacto de localização para a página TAG
+  Widget _buildLocalizacaoChip(BuildContext context) {
+    final temLoc = widget.localizacaoId != null;
+    final valida = widget.localizacaoValida;
+    final restante = widget.localizacaoSetadaEm == null
+        ? 0
+        : widget.localizacaoTimeoutMin -
+          DateTime.now().difference(widget.localizacaoSetadaEm!).inMinutes;
+
+    return GestureDetector(
+      onTap: widget.onAbrirLocalizacao,
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+        decoration: BoxDecoration(
+          color: temLoc && valida
+              ? Colors.green.shade50
+              : Colors.red.shade50,
+          borderRadius: BorderRadius.circular(20),
+          border: Border.all(
+            color: temLoc && valida ? Colors.green : Colors.red,
+          ),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(
+              temLoc && valida ? Icons.location_on : Icons.warning_amber,
+              size: 16,
+              color: temLoc && valida ? Colors.green.shade700 : Colors.red,
+            ),
+            const SizedBox(width: 4),
+            Flexible(
+              child: Text(
+                temLoc && valida
+                    ? '${widget.localizacaoNome ?? widget.localizacaoId} · ${restante}min'
+                    : 'Selecionar localização',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: temLoc && valida
+                      ? Colors.green.shade800
+                      : Colors.red.shade700,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const SizedBox(width: 4),
+            Icon(Icons.edit, size: 12,
+                color: temLoc && valida ? Colors.green.shade600 : Colors.red),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── PÁGINA 0: MODO TAG ─────────────────────────────────────────────
+  Widget _buildPaginaTag(BuildContext context) {
+    final isGas = widget.colecaoEncontrada == 'gases';
+    final temProduto = widget.descricao != null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        // Chip de localização compacto
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+          child: _buildLocalizacaoChip(context),
+        ),
+
+        // Campo TAG (único input — scanner físico preenche)
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+          child: TextFormField(
+            controller: widget.barrasCtrl,
+            focusNode: widget.barrasFocus,
+            autofocus: true,
+            decoration: _dec(
+              context,
+              label: 'Tag',
+              hint: 'Bipe ou digite a tag',
+              suffix: IconButton(
+                icon: const Icon(Icons.qr_code_scanner, size: 18),
+                onPressed: widget.onBuscarBarras,
+              ),
+            ),
+            textInputAction: TextInputAction.search,
+            onFieldSubmitted: (_) => widget.onBuscarBarras(),
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+
+        // Descrição do produto encontrado
+        if (temProduto) ...[
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 2, 8, 4),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Colors.blue.shade50,
+                borderRadius: BorderRadius.circular(10),
+                border: Border.all(color: Colors.blue.shade200),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    widget.descricao ?? '',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  if (widget.unidade != null)
+                    Text(
+                      'Unidade: ${widget.unidade}  •  ${isGas ? "Gás" : "Material"}',
+                      style: TextStyle(fontSize: 12, color: Colors.blue.shade700),
+                    ),
+                ],
+              ),
+            ),
+          ),
+
+          // Cheio + Vazio (só para gases) — preenchidos pelo scanner
+          if (isGas) ...[
+            Padding(
+              padding: const EdgeInsets.fromLTRB(8, 2, 8, 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: widget.cheioCtrl,
+                      focusNode: widget.cheioFocus,
+                      decoration: _dec(context, label: 'Cheio'),
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 13),
+                      validator: widget.validarCheio,
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Expanded(
+                    child: TextFormField(
+                      controller: widget.vazioCtrl,
+                      focusNode: widget.vazioFocus,
+                      decoration: _dec(context, label: 'Vazio'),
+                      keyboardType: TextInputType.number,
+                      style: const TextStyle(fontSize: 13),
+                      validator: widget.validarVazio,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+
+          // Botão Confirmar
+          Padding(
+            padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+            child: FilledButton.icon(
+              onPressed: widget.onConfirmar,
+              icon: const Icon(Icons.check),
+              label: const Text('Confirmar Lançamento'),
+            ),
+          ),
+        ],
+
+        // Lista de lançamentos recentes (ocupa o espaço restante)
+        Expanded(
+          flex: 3,
+          child: _LancamentosPane(
+            uid: widget.uid,
+            listScroll: widget.listScroll,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── PÁGINA 1: MODO CÓDIGO ─────────────────────────────────────────
+  Widget _buildPaginaCodigo(BuildContext context) {
+    final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+    return Column(
+      children: [
+        // Campo de busca por descrição
+        Padding(
+          padding: const EdgeInsets.all(8.0),
+          child: Autocomplete<String>(
+            optionsBuilder: (TextEditingValue tv) async {
+              if (tv.text.isEmpty) return const Iterable<String>.empty();
+              try {
+                return await widget.onBuscarSugestoes(tv.text);
+              } catch (_) {
+                return const Iterable<String>.empty();
+              }
+            },
+            onSelected: widget.onSelecionarSugestao,
+            fieldViewBuilder: (context, controller, focusNode, _) {
+              return TextField(
+                controller: controller,
+                focusNode: focusNode,
+                decoration: InputDecoration(
+                  labelText: 'Buscar produto (cód. ou descrição)',
+                  prefixIcon: const Icon(Icons.search),
+                  suffixIcon: controller.text.isNotEmpty
+                      ? IconButton(
+                          icon: const Icon(Icons.clear),
+                          onPressed: () {
+                            controller.clear();
+                            widget.onLimparFormulario();
+                            focusNode.requestFocus();
+                          },
+                        )
+                      : null,
+                  border: const OutlineInputBorder(),
+                  isDense: true,
+                ),
+                onChanged: (_) => setState(() {}),
+                onSubmitted: (v) {
+                  if (v.isNotEmpty) {
+                    widget.onSelecionarSugestao(v);
+                    controller.clear();
+                  }
+                },
+              );
+            },
+          ),
+        ),
+
+        // Formulário completo com scroll
+        Expanded(
+          child: _FormPane(
+            formKey: widget.formKey,
+            codigoCtrl: widget.codigoCtrl,
+            barrasCtrl: widget.barrasCtrl,
+            qtdCtrl: widget.qtdCtrl,
+            enderecoCtrl: widget.enderecoCtrl,
+            cheioCtrl: widget.cheioCtrl,
+            vazioCtrl: widget.vazioCtrl,
+            loteCtrl: widget.loteCtrl,
+            ordemServicoCtrl: widget.ordemServicoCtrl,
+            codigoFocus: widget.codigoFocus,
+            barrasFocus: widget.barrasFocus,
+            qtdFocus: widget.qtdFocus,
+            enderecoFocus: widget.enderecoFocus,
+            cheioFocus: widget.cheioFocus,
+            vazioFocus: widget.vazioFocus,
+            loteFocus: widget.loteFocus,
+            ordemServicoFocus: widget.ordemServicoFocus,
+            descricao: widget.descricao,
+            unidade: widget.unidade,
+            onBuscar: widget.onBuscar,
+            onBuscarBarras: widget.onBuscarBarras,
+            onConfirmar: widget.onConfirmar,
+            validarCodigo: widget.validarCodigo,
+            validarQuantidade: widget.validarQuantidade,
+            validarEndereco: widget.validarEndereco,
+            validarCheio: widget.validarCheio,
+            validarVazio: widget.validarVazio,
+            codigoEnabled: !widget.viaTag,
+            barrasEnabled: !widget.viaCodigo,
+            qtdPratEnabled: widget.colecaoEncontrada == 'materiais' && !widget.viaTag,
+            cheioEnabled: widget.colecaoEncontrada == 'gases' && !widget.viaTag,
+            vazioEnabled: widget.colecaoEncontrada == 'gases' && !widget.viaTag,
+            loteEnabled: widget.colecaoEncontrada != 'materiais',
+          ),
+        ),
+
+        // Mini-lista: oculta quando teclado está aberto para máximo espaço
+        if (!isKeyboardOpen)
+          Expanded(
+            flex: 3,
+            child: _LancamentosPane(
+              uid: widget.uid,
+              listScroll: widget.listScroll,
+            ),
+          ),
+      ],
+    );
+  }
+
+  // ── PÁGINA 2: HISTÓRICO COMPLETO ──────────────────────────────────
+  Widget _buildPaginaHistorico(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 8, 12, 4),
+          child: Text(
+            'Lançamentos realizados',
+            style: Theme.of(context).textTheme.titleSmall?.copyWith(
+              fontWeight: FontWeight.w600,
+            ),
+          ),
+        ),
+        Expanded(
+          child: _LancamentosPane(
+            uid: widget.uid,
+            listScroll: widget.listScroll,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // Navega para uma página respeitando o bloqueio por lançamento pendente.
+  void _irParaPagina(int index) {
+    if (index == _currentPage) return;
+    if (_temLancamentoEmAndamento) {
+      _avisarLancamentoPendente();
+      return;
+    }
+    _pageController.animateToPage(
+      index,
+      duration: const Duration(milliseconds: 250),
+      curve: Curves.easeInOut,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Column(
+      children: [
+        // Indicador de página (swipe dots)
+        Padding(
+          padding: const EdgeInsets.symmetric(vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // Dot página TAG
+              GestureDetector(
+                onTap: () => _irParaPagina(0),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _currentPage == 0
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '🏷 TAG',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _currentPage == 0 ? Colors.white : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ),
+              // Dot página Código
+              GestureDetector(
+                onTap: () => _irParaPagina(1),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _currentPage == 1
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '🔢 Código',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _currentPage == 1 ? Colors.white : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ),
+              // Dot página Histórico
+              GestureDetector(
+                onTap: () => _irParaPagina(2),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _currentPage == 2
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '📋 Histórico',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _currentPage == 2 ? Colors.white : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // PageView
+        Expanded(
+          child: _temLancamentoEmAndamento
+              // Quando bloqueado, captura a tentativa de swipe horizontal
+              // para avisar o operador em vez de ignorar silenciosamente.
+              ? GestureDetector(
+                  onHorizontalDragEnd: (_) => _avisarLancamentoPendente(),
+                  child: PageView(
+                    controller: _pageController,
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [
+                      _buildPaginaTag(context),
+                      _buildPaginaCodigo(context),
+                      _buildPaginaHistorico(context),
+                    ],
+                  ),
+                )
+              : PageView(
+                  controller: _pageController,
+                  physics: const AlwaysScrollableScrollPhysics(),
+                  onPageChanged: (index) {
+                    setState(() => _currentPage = index);
+
+                    if (index == 0) {
+                      // Voltou para a aba TAG: garante modo scanner puro
+                      FocusScope.of(context).unfocus();
+                      SystemChannels.textInput.invokeMethod('TextInput.hide');
+                      WidgetsBinding.instance.addPostFrameCallback((_) {
+                        if (mounted) widget.barrasFocus.requestFocus();
+                      });
+                    } else {
+                      // Saiu da aba TAG: solta o foco para não prender o cursor
+                      FocusScope.of(context).unfocus();
+                    }
+                  },
+                  children: [
+                    _buildPaginaTag(context),
+                    _buildPaginaCodigo(context),
+                    _buildPaginaHistorico(context),
+                  ],
+                ),
         ),
       ],
     );
@@ -2579,12 +3201,28 @@ class _HomePageState extends State<HomePage> {
     }
 
     // Validação ajustada: verificar flags ao invés dos campos diretamente
-    // porque quando via TAG, o código é preenchido automaticamente
-
-    if (!_formKey.currentState!.validate()) {
+    // porque quando via TAG, o código é preenchido automaticamente.
+    // Null-safe: na aba TAG (CT60), o Form do _FormPane pode não estar
+    // montado na árvore — nesse caso pulamos a validação do Form, pois os
+    // campos da aba TAG (Cheio/Vazio) já têm validadores próprios e o
+    // produto foi resolvido pela leitura da tag.
+    final formState = _formKey.currentState;
+    if (formState != null && !formState.validate()) {
       debugPrint('Validação do formulário falhou');
       _snack('Preencha os campos obrigatórios corretamente', error: true);
       return;
+    }
+
+    // Rede de segurança para gás na aba TAG: garante que pelo menos um
+    // valor (Cheio ou Vazio) seja informado mesmo se o Form não validou
+    // por não estar montado.
+    if (_colecaoEncontrada == 'gases') {
+      final cheioVal = double.tryParse(_cheioCtrl.text.replaceAll(',', '.')) ?? 0.0;
+      final vazioVal = double.tryParse(_vazioCtrl.text.replaceAll(',', '.')) ?? 0.0;
+      if (cheioVal == 0 && vazioVal == 0) {
+        _snack('Informe Cheio ou Vazio antes de confirmar', error: true);
+        return;
+      }
     }
     setState(() {
       _isSubmitting = true;
@@ -2649,7 +3287,7 @@ class _HomePageState extends State<HomePage> {
       debugPrint('Lançamento registrado com sucesso no Hive');
       _snack('Lançamento registrado com sucesso');
       if (tag.isNotEmpty) _tagsCache?.add(tag);
-      _formKey.currentState!.reset();
+      _formKey.currentState?.reset();
       _codigoCtrl.clear();
       _barrasCtrl.clear();
       _qtdCtrl.clear();
@@ -3003,10 +3641,16 @@ class _HomePageState extends State<HomePage> {
             if (_inventarioAtivo != null) _buildHeaderInventario(),
 
             // ⭐ WIDGET DE LOCALIZAÇÃO GEOGRÁFICA
-            Padding(
-              padding: const EdgeInsets.all(8.0),
-              child: _buildLocalizacaoWidget(),
-            ),
+            // Oculta o widget quando o teclado estiver aberto (telas pequenas como CT60)
+            Builder(builder: (context) {
+              final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
+              final isSmallScreen = MediaQuery.of(context).size.height < 700;
+              if (isKeyboardOpen && isSmallScreen) return const SizedBox.shrink();
+              return Padding(
+                padding: const EdgeInsets.all(8.0),
+                child: _buildLocalizacaoWidget(),
+              );
+            }),
 
     // Conteúdo original
     Expanded(
@@ -3016,129 +3660,73 @@ class _HomePageState extends State<HomePage> {
               constraints.maxWidth < 600 && MediaQuery.of(context).orientation == Orientation.portrait;
 
           if (isSmartphonePortrait) {
-            return Column(
-              children: [
-                Expanded(
-                  flex: 13,
-                  child: Column(
-                    children: [
-                      Padding(
-                        padding: const EdgeInsets.all(8.0),
-                        child: Autocomplete<String>(
-                          optionsBuilder: (TextEditingValue textEditingValue) async {
-                            if (textEditingValue.text.isEmpty) {
-                              debugPrint('Consulta vazia');
-                              return const Iterable<String>.empty();
-                            }
-                            debugPrint('Buscando sugestões para: ${textEditingValue.text}');
-
-                            try {
-                              return await _buscarSugestoes(textEditingValue.text);
-                            } catch (e) {
-                              debugPrint('❌ Erro no Autocomplete (Portrait): $e');
-                              return const Iterable<String>.empty();
-                            }
-                          },
-                          onSelected: (String selection) async {
-                            debugPrint('Sugestão selecionada: $selection');
-                            _selecionarSugestao(selection);
-                          },
-                          fieldViewBuilder: (context, controller, focusNode, onEditingComplete) {
-                            _buscaCtrl = controller;
-                            return TextField(
-                              controller: controller,
-                              focusNode: focusNode,
-                              decoration: InputDecoration(
-                                labelText: 'Buscar produto (cód. ou descrição)',
-                                prefixIcon: const Icon(Icons.search),
-                                suffixIcon: controller.text.isNotEmpty
-                                    ? IconButton(
-                                  icon: const Icon(Icons.clear),
-                                  onPressed: () {
-                                    controller.clear();
-                                    setState(() {
-                                      _descricao = null;
-                                      _unidade = null;
-                                      _colecaoEncontrada = null;
-                                      _viaTag = false;
-                                      _viaCodigo = false;
-                                      _codigoCtrl.clear();
-                                      _barrasCtrl.clear();
-                                      _qtdCtrl.clear();
-                                      _enderecoCtrl.clear();
-                                      _cheioCtrl.clear();
-                                      _vazioCtrl.clear();
-                                      _loteCtrl.clear();
-                                      TextEditingController? _buscaCtrl;
-                                    });
-                                    focusNode.requestFocus();
-                                  },
-                                )
-                                    : null,
-                                border: const OutlineInputBorder(),
-                              ),
-                              onChanged: (value) {
-                                debugPrint('Texto digitado: $value');
-                                setState(() {});
-                              },
-                              onSubmitted: (value) {
-                                if (value.isNotEmpty) {
-                                  _selecionarSugestao(value);
-                                  controller.clear();
-                                }
-                              },
-                            );
-                          },
-                        ),
-                      ),
-                      Expanded(
-                        child: _FormPane(
-                          formKey: _formKey,
-                          codigoCtrl: _codigoCtrl,
-                          barrasCtrl: _barrasCtrl,
-                          qtdCtrl: _qtdCtrl,
-                          enderecoCtrl: _enderecoCtrl,
-                          cheioCtrl: _cheioCtrl,
-                          vazioCtrl: _vazioCtrl,
-                          loteCtrl: _loteCtrl,
-                          ordemServicoCtrl: _ordemServicoCtrl,
-                          codigoFocus: _codigoFocus,
-                          barrasFocus: _barrasFocus,
-                          qtdFocus: _qtdFocus,
-                          enderecoFocus: _enderecoFocus,
-                          cheioFocus: _cheioFocus,
-                          vazioFocus: _vazioFocus,
-                          loteFocus: _loteFocus,
-                          ordemServicoFocus: _ordemServicoFocus,
-                          descricao: _descricao,
-                          unidade: _unidade,
-                          onBuscar: _buscarProduto,
-                          onBuscarBarras: _buscarBarras,
-                          onConfirmar: _confirmar,
-                          validarCodigo: _validarCodigo,
-                          validarQuantidade: _validarQuantidade,
-                          validarEndereco: _validarEndereco,
-                          validarCheio: _validarCheio,
-                          validarVazio: _validarVazio,
-                          codigoEnabled: !_viaTag,
-                          barrasEnabled: !_viaCodigo,
-                          qtdPratEnabled: _colecaoEncontrada == 'materiais' && !_viaTag,
-                          cheioEnabled: _colecaoEncontrada == 'gases' && !_viaTag,
-                          vazioEnabled: _colecaoEncontrada == 'gases' && !_viaTag,
-                          loteEnabled: _colecaoEncontrada != 'materiais',
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                Expanded(
-                  flex: 7,
-                  child: _LancamentosPane(
-                    uid: FirebaseAuth.instance.currentUser?.uid,
-                    listScroll: _listScroll,
-                  ),
-                ),
-              ],
+            // ========== CT60: LAYOUT PAGEVIEW (TAG | CÓDIGO) ==========
+            return _CT60PagedLayout(
+              // Controladores compartilhados
+              formKey: _formKey,
+              codigoCtrl: _codigoCtrl,
+              barrasCtrl: _barrasCtrl,
+              qtdCtrl: _qtdCtrl,
+              enderecoCtrl: _enderecoCtrl,
+              cheioCtrl: _cheioCtrl,
+              vazioCtrl: _vazioCtrl,
+              loteCtrl: _loteCtrl,
+              ordemServicoCtrl: _ordemServicoCtrl,
+              // FocusNodes
+              codigoFocus: _codigoFocus,
+              barrasFocus: _barrasFocus,
+              qtdFocus: _qtdFocus,
+              enderecoFocus: _enderecoFocus,
+              cheioFocus: _cheioFocus,
+              vazioFocus: _vazioFocus,
+              loteFocus: _loteFocus,
+              ordemServicoFocus: _ordemServicoFocus,
+              // Estado do produto encontrado
+              descricao: _descricao,
+              unidade: _unidade,
+              colecaoEncontrada: _colecaoEncontrada,
+              viaTag: _viaTag,
+              viaCodigo: _viaCodigo,
+              // Localização
+              localizacaoId: _localizacaoId,
+              localizacaoNome: _localizacaoNome,
+              localizacaoValida: _localizacaoValida(),
+              localizacaoSetadaEm: _localizacaoSetadaEm,
+              localizacaoTimeoutMin: _localizacaoTimeoutMin,
+              onAbrirLocalizacao: _abrirSeletorLocalizacao,
+              // Callbacks
+              onBuscar: _buscarProduto,
+              onBuscarBarras: _buscarBarras,
+              onConfirmar: _confirmar,
+              onSelecionarSugestao: _selecionarSugestao,
+              onBuscarSugestoes: _buscarSugestoes,
+              onLimparFormulario: () {
+                setState(() {
+                  _descricao = null;
+                  _unidade = null;
+                  _colecaoEncontrada = null;
+                  _viaTag = false;
+                  _viaCodigo = false;
+                  _tagAtual = null;
+                  _volumeProduto = null;
+                });
+                _codigoCtrl.clear();
+                _barrasCtrl.clear();
+                _qtdCtrl.clear();
+                _enderecoCtrl.clear();
+                _cheioCtrl.clear();
+                _vazioCtrl.clear();
+                _loteCtrl.clear();
+              },
+              // Validadores
+              validarCodigo: _validarCodigo,
+              validarQuantidade: _validarQuantidade,
+              validarEndereco: _validarEndereco,
+              validarCheio: _validarCheio,
+              validarVazio: _validarVazio,
+              // UID para lista de lançamentos
+              uid: FirebaseAuth.instance.currentUser?.uid,
+              listScroll: _listScroll,
             );
           } else {
             return Column(
