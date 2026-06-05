@@ -121,14 +121,17 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
   late final TextEditingController _descricaoCtrl;
   final _unidadeCtrl = TextEditingController();
   final _volumeCtrl = TextEditingController();
-  final _quantidadeCtrl = TextEditingController();
-  final _prateleiraCtrl = TextEditingController();
   final _loteCtrl = TextEditingController();
+
+  // Estado da busca por código no Hive
+  bool _buscando = false;
+  bool _codigoEncontrado = false; // true => campos de produto travados (autopreenchidos)
+  bool _buscaFeita = false;       // true => operador já tentou buscar ao menos uma vez
 
   @override
   void initState() {
     super.initState();
-    _codigoCtrl = TextEditingController(text: widget.codigoInicial ?? widget.tagInicial);
+    _codigoCtrl = TextEditingController(text: widget.codigoInicial);
     _descricaoCtrl = TextEditingController();
   }
 
@@ -138,14 +141,59 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
     _descricaoCtrl.dispose();
     _unidadeCtrl.dispose();
     _volumeCtrl.dispose();
-    _quantidadeCtrl.dispose();
-    _prateleiraCtrl.dispose();
     _loteCtrl.dispose();
     super.dispose();
   }
 
+  Future<void> _buscarCodigoNoHive() async {
+    final codigo = _codigoCtrl.text.trim();
+    if (codigo.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Digite o código do produto primeiro')),
+      );
+      return;
+    }
+
+    setState(() => _buscando = true);
+    try {
+      final produto = await ProdutosRepository().getByCodigoPreferGases(codigo);
+      if (produto != null) {
+        // Código existe no Hive: autopreenche e trava os campos de produto
+        setState(() {
+          _descricaoCtrl.text = produto.descricao;
+          _unidadeCtrl.text = produto.unidade;
+          _volumeCtrl.text = produto.volume?.toString() ?? '';
+          _codigoEncontrado = true;
+          _buscaFeita = true;
+        });
+      } else {
+        // Código não existe: libera digitação manual
+        setState(() {
+          _codigoEncontrado = false;
+          _buscaFeita = true;
+        });
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Código não encontrado. Preencha os dados manualmente.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar código no Hive: $e');
+      setState(() {
+        _codigoEncontrado = false;
+        _buscaFeita = true;
+      });
+    } finally {
+      if (mounted) setState(() => _buscando = false);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
+    // Campos de produto só ficam editáveis quando a busca foi feita e NÃO achou.
+    final camposProdutoEditaveis = _buscaFeita && !_codigoEncontrado;
+
     return Dialog(
       child: Container(
         constraints: const BoxConstraints(maxWidth: 500),
@@ -161,46 +209,123 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                   children: [
                     const Icon(Icons.add_box, color: Colors.orange),
                     const SizedBox(width: 8),
-                    Text(
-                      'Cadastro Manual de Item',
-                      style: Theme.of(context).textTheme.headlineSmall,
+                    Expanded(
+                      child: Text(
+                        'Cadastro de Tag',
+                        style: Theme.of(context).textTheme.headlineSmall,
+                      ),
                     ),
                   ],
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Item não encontrado no sistema. Preencha os dados conhecidos:',
+                  'Informe o código do gás e toque em Buscar. '
+                  'Se existir, os dados serão preenchidos automaticamente.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),
 
-                // Código
+                // Tag (somente leitura — já conhecida)
                 TextFormField(
-                  controller: _codigoCtrl,
+                  initialValue: widget.tagInicial ?? '',
+                  readOnly: true,
                   decoration: const InputDecoration(
-                    labelText: 'Código *',
-                    hintText: 'Digite o código do produto',
-                    prefixIcon: Icon(Icons.qr_code),
+                    labelText: 'Tag',
+                    prefixIcon: Icon(Icons.qr_code_scanner),
                     border: OutlineInputBorder(),
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Código é obrigatório';
-                    }
-                    return null;
-                  },
-                  textCapitalization: TextCapitalization.characters,
                 ),
                 const SizedBox(height: 12),
+
+                // Código + botão Buscar
+                Row(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _codigoCtrl,
+                        decoration: const InputDecoration(
+                          labelText: 'Código do gás *',
+                          hintText: 'Digite o código',
+                          prefixIcon: Icon(Icons.qr_code),
+                          border: OutlineInputBorder(),
+                        ),
+                        validator: (value) {
+                          if (value == null || value.trim().isEmpty) {
+                            return 'Código é obrigatório';
+                          }
+                          return null;
+                        },
+                        textCapitalization: TextCapitalization.characters,
+                        onChanged: (_) {
+                          // Se mudar o código depois de uma busca, reseta o estado
+                          if (_buscaFeita) {
+                            setState(() {
+                              _buscaFeita = false;
+                              _codigoEncontrado = false;
+                              _descricaoCtrl.clear();
+                              _unidadeCtrl.clear();
+                              _volumeCtrl.clear();
+                            });
+                          }
+                        },
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      height: 56,
+                      child: FilledButton.icon(
+                        onPressed: _buscando ? null : _buscarCodigoNoHive,
+                        icon: _buscando
+                            ? const SizedBox(
+                                width: 16, height: 16,
+                                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                              )
+                            : const Icon(Icons.search, size: 18),
+                        label: const Text('Buscar'),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 12),
+
+                // Indicador de status da busca
+                if (_buscaFeita)
+                  Padding(
+                    padding: const EdgeInsets.only(bottom: 12),
+                    child: Row(
+                      children: [
+                        Icon(
+                          _codigoEncontrado ? Icons.check_circle : Icons.edit_note,
+                          size: 16,
+                          color: _codigoEncontrado ? Colors.green : Colors.orange,
+                        ),
+                        const SizedBox(width: 6),
+                        Expanded(
+                          child: Text(
+                            _codigoEncontrado
+                                ? 'Produto encontrado — dados preenchidos automaticamente.'
+                                : 'Produto novo — preencha descrição, unidade e volume.',
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: _codigoEncontrado ? Colors.green.shade700 : Colors.orange.shade800,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
 
                 // Descrição
                 TextFormField(
                   controller: _descricaoCtrl,
-                  decoration: const InputDecoration(
+                  readOnly: !camposProdutoEditaveis,
+                  decoration: InputDecoration(
                     labelText: 'Descrição *',
-                    hintText: 'Digite a descrição do produto',
-                    prefixIcon: Icon(Icons.description),
-                    border: OutlineInputBorder(),
+                    hintText: 'Descrição do produto',
+                    prefixIcon: const Icon(Icons.description),
+                    border: const OutlineInputBorder(),
+                    filled: !camposProdutoEditaveis,
                   ),
                   validator: (value) {
                     if (value == null || value.trim().isEmpty) {
@@ -218,11 +343,13 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _unidadeCtrl,
-                        decoration: const InputDecoration(
+                        readOnly: !camposProdutoEditaveis,
+                        decoration: InputDecoration(
                           labelText: 'Unidade *',
-                          hintText: 'Ex: UN, KG, L',
-                          prefixIcon: Icon(Icons.straighten),
-                          border: OutlineInputBorder(),
+                          hintText: 'Ex: UN, M3',
+                          prefixIcon: const Icon(Icons.straighten),
+                          border: const OutlineInputBorder(),
+                          filled: !camposProdutoEditaveis,
                         ),
                         validator: (value) {
                           if (value == null || value.trim().isEmpty) {
@@ -237,11 +364,13 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                     Expanded(
                       child: TextFormField(
                         controller: _volumeCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Volume (L)',
+                        readOnly: !camposProdutoEditaveis,
+                        decoration: InputDecoration(
+                          labelText: 'Volume',
                           hintText: 'Opcional',
-                          prefixIcon: Icon(Icons.water_drop),
-                          border: OutlineInputBorder(),
+                          prefixIcon: const Icon(Icons.water_drop),
+                          border: const OutlineInputBorder(),
+                          filled: !camposProdutoEditaveis,
                         ),
                         keyboardType: const TextInputType.numberWithOptions(decimal: true),
                       ),
@@ -250,47 +379,21 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // Quantidade e Prateleira
-                Row(
-                  children: [
-                    Expanded(
-                      child: TextFormField(
-                        controller: _quantidadeCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Quantidade',
-                          hintText: 'Ex: 1, 2.5 (opcional)',
-                          prefixIcon: Icon(Icons.numbers),
-                          border: OutlineInputBorder(),
-                        ),
-                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
-                      ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: TextFormField(
-                        controller: _prateleiraCtrl,
-                        decoration: const InputDecoration(
-                          labelText: 'Prateleira',
-                          hintText: 'Ex: 6K9 (opcional)',
-                          prefixIcon: Icon(Icons.shelves),
-                          border: OutlineInputBorder(),
-                        ),
-                        textCapitalization: TextCapitalization.characters,
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-
-                // Lote
+                // Lote (obrigatório para tag)
                 TextFormField(
                   controller: _loteCtrl,
                   decoration: const InputDecoration(
-                    labelText: 'Lote',
-                    hintText: 'Opcional',
+                    labelText: 'Lote *',
+                    hintText: 'Informe o lote',
                     prefixIcon: Icon(Icons.inventory),
                     border: OutlineInputBorder(),
                   ),
+                  validator: (value) {
+                    if (value == null || value.trim().isEmpty) {
+                      return 'Lote é obrigatório';
+                    }
+                    return null;
+                  },
                   textCapitalization: TextCapitalization.characters,
                 ),
 
@@ -307,20 +410,27 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                     const SizedBox(width: 12),
                     FilledButton.icon(
                       onPressed: () async {
+                        // Exige que a busca tenha sido feita ao menos uma vez
+                        if (!_buscaFeita) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text('Toque em Buscar para verificar o código antes de salvar')),
+                          );
+                          return;
+                        }
                         if (!_formKey.currentState!.validate()) return;
-
-                        final qtdText = _quantidadeCtrl.text.trim();
-                        final pratText = _prateleiraCtrl.text.trim();
 
                         final resultado = {
                           'codigo': _codigoCtrl.text.trim().toUpperCase(),
                           'descricao': _descricaoCtrl.text.trim(),
                           'unidade': _unidadeCtrl.text.trim().toUpperCase(),
-                          'quantidade': qtdText.isEmpty ? 0.0 : (double.tryParse(qtdText.replaceAll(',', '.')) ?? 0.0),
-                          'prateleira': pratText.isEmpty ? '' : pratText.toUpperCase(),
+                          'quantidade': 0.0,
+                          'prateleira': '',
                           'lote': _loteCtrl.text.trim(),
                           'volume': double.tryParse(_volumeCtrl.text.replaceAll(',', '.')),
                           'tag': widget.tagInicial ?? '',
+                          // Tag de gás cadastrada manualmente: 1 cheio, 0 vazio
+                          'cheio': 1.0,
+                          'vazio': 0.0,
                         };
 
                         Navigator.of(context).pop(resultado);
@@ -796,6 +906,18 @@ class _FormPane extends StatelessWidget {
 
   // ========== LAYOUT SMARTPHONE PORTRAIT ==========
   Widget _buildSmartphoneLayout(BuildContext context) {
+    // Regra de visibilidade por tipo de produto:
+    // - Material: mostra Quantidade + Prateleira; oculta Cheio, Vazio, Lote.
+    // - Gás:      mostra Cheio, Vazio, Lote; oculta Quantidade + Prateleira.
+    // Os flags já carregam o tipo: qtdPratEnabled=material, cheioEnabled=gás.
+    final bool ehMaterial = qtdPratEnabled;
+    final bool ehGas = cheioEnabled || vazioEnabled;
+    // Antes de identificar o produto, nenhum dos dois é true: mostramos os
+    // campos de forma neutra para não deixar a tela vazia.
+    final bool indefinido = !ehMaterial && !ehGas;
+    final bool mostrarQtdPrat = ehMaterial || indefinido;
+    final bool mostrarGas = ehGas || indefinido;
+
     return SingleChildScrollView(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -868,7 +990,8 @@ class _FormPane extends StatelessWidget {
         ),
         const SizedBox(height: 8),
 
-        // LINHA 3: Unidade + Quantidade + Prateleira (tamanhos iguais)
+        // LINHA 3: Unidade + Quantidade + Prateleira
+        // Qtd e Prateleira só aparecem para material (ou enquanto indefinido).
         Row(
           children: [
             Expanded(
@@ -879,93 +1002,97 @@ class _FormPane extends StatelessWidget {
                 style: const TextStyle(fontSize: 12),
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextFormField(
-                controller: qtdCtrl,
-                focusNode: qtdFocus,
-                enabled: qtdPratEnabled,
-                decoration: _dec(context, label: 'Qtd', hint: '1,5'),
-                keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: true),
-                textInputAction: TextInputAction.next,
-                onFieldSubmitted: (_) => enderecoFocus.requestFocus(),
-                validator: qtdPratEnabled ? validarQuantidade : null,
-                style: const TextStyle(fontSize: 12),
+            if (mostrarQtdPrat) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: qtdCtrl,
+                  focusNode: qtdFocus,
+                  enabled: qtdPratEnabled,
+                  decoration: _dec(context, label: 'Qtd', hint: '1,5'),
+                  keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: true),
+                  textInputAction: TextInputAction.next,
+                  onFieldSubmitted: (_) => enderecoFocus.requestFocus(),
+                  validator: qtdPratEnabled ? validarQuantidade : null,
+                  style: const TextStyle(fontSize: 12),
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextFormField(
-                controller: enderecoCtrl,
-                focusNode: enderecoFocus,
-                enabled: qtdPratEnabled,
-                maxLength: 3,
-                decoration: _dec(context, label: 'Prat', hint: '6K9'),
-                textCapitalization: TextCapitalization.characters,
-                textInputAction: TextInputAction.next,
-                validator: qtdPratEnabled ? validarEndereco : null,
-                style: const TextStyle(fontSize: 12),
-                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: enderecoCtrl,
+                  focusNode: enderecoFocus,
+                  enabled: qtdPratEnabled,
+                  maxLength: 3,
+                  decoration: _dec(context, label: 'Prat', hint: '6K9'),
+                  textCapitalization: TextCapitalization.characters,
+                  textInputAction: TextInputAction.next,
+                  validator: qtdPratEnabled ? validarEndereco : null,
+                  style: const TextStyle(fontSize: 12),
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                ),
               ),
-            ),
+            ],
           ],
         ),
         const SizedBox(height: 8),
 
-        // LINHA 4: Cheio + Vazio + Lote + Botão Circular
+        // LINHA 4: Cheio + Vazio + Lote (só gás) + OS + Botão Confirmar
         Row(
           children: [
-            // Cheio (menor)
-            SizedBox(
-              width: 70,
-              child: TextFormField(
-                controller: cheioCtrl,
-                focusNode: cheioFocus,
-                enabled: cheioEnabled,
-                maxLength: 4,
-                decoration: _dec(context, label: 'Cheio'),
-                keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),  // ✅ MUDADO: decimal: false
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],  // ✅ ADICIONADO: Só dígitos
-                textInputAction: TextInputAction.next,
-                validator: cheioEnabled ? validarCheio : null,
-                style: const TextStyle(fontSize: 12),
-                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+            if (mostrarGas) ...[
+              // Cheio (menor)
+              SizedBox(
+                width: 70,
+                child: TextFormField(
+                  controller: cheioCtrl,
+                  focusNode: cheioFocus,
+                  enabled: cheioEnabled,
+                  maxLength: 4,
+                  decoration: _dec(context, label: 'Cheio'),
+                  keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textInputAction: TextInputAction.next,
+                  validator: cheioEnabled ? validarCheio : null,
+                  style: const TextStyle(fontSize: 12),
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-// Vazio (menor)
-            SizedBox(
-              width: 70,
-              child: TextFormField(
-                controller: vazioCtrl,
-                focusNode: vazioFocus,
-                enabled: vazioEnabled,
-                maxLength: 4,
-                decoration: _dec(context, label: 'Vazio'),
-                keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),  // ✅ MUDADO: decimal: false
-                inputFormatters: [FilteringTextInputFormatter.digitsOnly],  // ✅ ADICIONADO: Só dígitos
-                textInputAction: TextInputAction.next,
-                validator: vazioEnabled ? validarVazio : null,
-                style: const TextStyle(fontSize: 12),
-                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+              const SizedBox(width: 8),
+              // Vazio (menor)
+              SizedBox(
+                width: 70,
+                child: TextFormField(
+                  controller: vazioCtrl,
+                  focusNode: vazioFocus,
+                  enabled: vazioEnabled,
+                  maxLength: 4,
+                  decoration: _dec(context, label: 'Vazio'),
+                  keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),
+                  inputFormatters: [FilteringTextInputFormatter.digitsOnly],
+                  textInputAction: TextInputAction.next,
+                  validator: vazioEnabled ? validarVazio : null,
+                  style: const TextStyle(fontSize: 12),
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            // Lote (maior - referência)
-            Expanded(
-              child: TextFormField(
-                controller: loteCtrl,
-                focusNode: loteFocus,
-                enabled: loteEnabled,
-                maxLength: 10,
-                decoration: _dec(context, label: 'Lote'),
-                textInputAction: TextInputAction.next,
-                style: const TextStyle(fontSize: 12),
-                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+              const SizedBox(width: 8),
+              // Lote (só gás)
+              Expanded(
+                child: TextFormField(
+                  controller: loteCtrl,
+                  focusNode: loteFocus,
+                  enabled: loteEnabled,
+                  maxLength: 10,
+                  decoration: _dec(context, label: 'Lote'),
+                  textInputAction: TextInputAction.next,
+                  style: const TextStyle(fontSize: 12),
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
+                ),
               ),
-            ),
-            const SizedBox(width: 8),
-            // OS (mesma largura do Lote)
+              const SizedBox(width: 8),
+            ],
+            // OS (sempre presente)
             Expanded(
               child: TextFormField(
                 controller: ordemServicoCtrl,
@@ -1808,47 +1935,36 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
           ),
         ),
 
-        // PageView
+        // PageView — estrutura ÚNICA e estável (não trocar a árvore de widgets
+        // condicionalmente, senão o PageView é recriado e volta para a página 0).
+        // O bloqueio é feito apenas pela physics, calculada por variável.
         Expanded(
-          child: _temLancamentoEmAndamento
-              // Quando bloqueado, captura a tentativa de swipe horizontal
-              // para avisar o operador em vez de ignorar silenciosamente.
-              ? GestureDetector(
-                  onHorizontalDragEnd: (_) => _avisarLancamentoPendente(),
-                  child: PageView(
-                    controller: _pageController,
-                    physics: const NeverScrollableScrollPhysics(),
-                    children: [
-                      _buildPaginaTag(context),
-                      _buildPaginaCodigo(context),
-                      _buildPaginaHistorico(context),
-                    ],
-                  ),
-                )
-              : PageView(
-                  controller: _pageController,
-                  physics: const AlwaysScrollableScrollPhysics(),
-                  onPageChanged: (index) {
-                    setState(() => _currentPage = index);
+          child: PageView(
+            controller: _pageController,
+            physics: _temLancamentoEmAndamento
+                ? const NeverScrollableScrollPhysics()
+                : const AlwaysScrollableScrollPhysics(),
+            onPageChanged: (index) {
+              setState(() => _currentPage = index);
 
-                    if (index == 0) {
-                      // Voltou para a aba TAG: garante modo scanner puro
-                      FocusScope.of(context).unfocus();
-                      SystemChannels.textInput.invokeMethod('TextInput.hide');
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (mounted) widget.barrasFocus.requestFocus();
-                      });
-                    } else {
-                      // Saiu da aba TAG: solta o foco para não prender o cursor
-                      FocusScope.of(context).unfocus();
-                    }
-                  },
-                  children: [
-                    _buildPaginaTag(context),
-                    _buildPaginaCodigo(context),
-                    _buildPaginaHistorico(context),
-                  ],
-                ),
+              if (index == 0) {
+                // Voltou para a aba TAG: garante modo scanner puro
+                FocusScope.of(context).unfocus();
+                SystemChannels.textInput.invokeMethod('TextInput.hide');
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) widget.barrasFocus.requestFocus();
+                });
+              } else {
+                // Saiu da aba TAG: solta o foco para não prender o cursor
+                FocusScope.of(context).unfocus();
+              }
+            },
+            children: [
+              _buildPaginaTag(context),
+              _buildPaginaCodigo(context),
+              _buildPaginaHistorico(context),
+            ],
+          ),
         ),
       ],
     );
@@ -3133,8 +3249,8 @@ class _HomePageState extends State<HomePage> {
         unidade: resultado['unidade'] ?? '',
         prateleira: resultado['prateleira'] ?? '',
         quantidade: resultado['quantidade'],
-        cheio: 0.0,  // ✅ Campos obrigatórios
-        vazio: 0.0,  // ✅ Campos obrigatórios
+        cheio: (resultado['cheio'] as double?) ?? 0.0,
+        vazio: (resultado['vazio'] as double?) ?? 0.0,
         lote: resultado['lote'],
         tag: resultado['tag'],
         volume: resultado['volume'],
