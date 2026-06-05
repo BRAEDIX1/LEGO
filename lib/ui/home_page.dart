@@ -704,6 +704,7 @@ class _FormPane extends StatelessWidget {
     required this.cheioEnabled,
     required this.vazioEnabled,
     required this.loteEnabled,
+    this.soCodigo = false,
   });
 
   final GlobalKey<FormState> formKey;
@@ -739,6 +740,9 @@ class _FormPane extends StatelessWidget {
   final bool cheioEnabled;
   final bool vazioEnabled;
   final bool loteEnabled;
+  // Quando true (aba Código do CT60), oculta o campo Tag duplicado e dá
+  // foco inicial ao campo Código. Default false preserva o layout do tablet.
+  final bool soCodigo;
 
   InputDecoration _dec(
       BuildContext context, {
@@ -796,7 +800,7 @@ class _FormPane extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-        // LINHA 1: Código + Tag
+        // LINHA 1: Código (+ Tag, exceto no modo soCodigo do CT60)
         Row(
           children: [
             Expanded(
@@ -804,6 +808,7 @@ class _FormPane extends StatelessWidget {
                 controller: codigoCtrl,
                 focusNode: codigoFocus,
                 enabled: codigoEnabled,
+                autofocus: soCodigo,
                 maxLength: 8,
                 decoration: _dec(
                   context,
@@ -822,30 +827,34 @@ class _FormPane extends StatelessWidget {
                 buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
               ),
             ),
-            const SizedBox(width: 8),
-            Expanded(
-              child: TextFormField(
-                controller: barrasCtrl,
-                focusNode: barrasFocus,
-                enabled: barrasEnabled,
-                maxLength: 10,
-                decoration: _dec(
-                  context,
-                  label: 'Tag',
-                  hint: '10 dígitos',
-                  suffix: IconButton(
-                    tooltip: 'Buscar por tag',
-                    onPressed: onBuscarBarras,
-                    icon: const Icon(Icons.qr_code_scanner, size: 18),
+            // Campo Tag só aparece fora do modo soCodigo (ex.: tablet/landscape).
+            // Na aba Código do CT60 ele é omitido para não roubar o foco.
+            if (!soCodigo) ...[
+              const SizedBox(width: 8),
+              Expanded(
+                child: TextFormField(
+                  controller: barrasCtrl,
+                  focusNode: barrasFocus,
+                  enabled: barrasEnabled,
+                  maxLength: 10,
+                  decoration: _dec(
+                    context,
+                    label: 'Tag',
+                    hint: '10 dígitos',
+                    suffix: IconButton(
+                      tooltip: 'Buscar por tag',
+                      onPressed: onBuscarBarras,
+                      icon: const Icon(Icons.qr_code_scanner, size: 18),
+                    ),
                   ),
+                  textInputAction: TextInputAction.search,
+                  onFieldSubmitted: (_) => onBuscarBarras(),
+                  autofocus: true,
+                  style: const TextStyle(fontSize: 12),
+                  buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
                 ),
-                textInputAction: TextInputAction.search,
-                onFieldSubmitted: (_) => onBuscarBarras(),
-                autofocus: true,
-                style: const TextStyle(fontSize: 12),
-                buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
               ),
-            ),
+            ],
           ],
         ),
         const SizedBox(height: 8),
@@ -1398,51 +1407,55 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
   Widget _buildLocalizacaoChip(BuildContext context) {
     final temLoc = widget.localizacaoId != null;
     final valida = widget.localizacaoValida;
+    final expirada = temLoc && !valida;
     final restante = widget.localizacaoSetadaEm == null
         ? 0
         : widget.localizacaoTimeoutMin -
           DateTime.now().difference(widget.localizacaoSetadaEm!).inMinutes;
+
+    final String texto;
+    if (valida) {
+      texto = '${widget.localizacaoNome ?? widget.localizacaoId} · ${restante}min';
+    } else if (expirada) {
+      texto = 'Localização expirada — toque para renovar';
+    } else {
+      texto = 'Selecionar localização';
+    }
 
     return GestureDetector(
       onTap: widget.onAbrirLocalizacao,
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
         decoration: BoxDecoration(
-          color: temLoc && valida
-              ? Colors.green.shade50
-              : Colors.red.shade50,
+          color: valida ? Colors.green.shade50 : Colors.red.shade50,
           borderRadius: BorderRadius.circular(20),
           border: Border.all(
-            color: temLoc && valida ? Colors.green : Colors.red,
+            color: valida ? Colors.green : Colors.red,
           ),
         ),
         child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             Icon(
-              temLoc && valida ? Icons.location_on : Icons.warning_amber,
+              valida ? Icons.location_on : Icons.warning_amber,
               size: 16,
-              color: temLoc && valida ? Colors.green.shade700 : Colors.red,
+              color: valida ? Colors.green.shade700 : Colors.red,
             ),
             const SizedBox(width: 4),
             Flexible(
               child: Text(
-                temLoc && valida
-                    ? '${widget.localizacaoNome ?? widget.localizacaoId} · ${restante}min'
-                    : 'Selecionar localização',
+                texto,
                 style: TextStyle(
                   fontSize: 12,
                   fontWeight: FontWeight.w600,
-                  color: temLoc && valida
-                      ? Colors.green.shade800
-                      : Colors.red.shade700,
+                  color: valida ? Colors.green.shade800 : Colors.red.shade700,
                 ),
                 overflow: TextOverflow.ellipsis,
               ),
             ),
             const SizedBox(width: 4),
             Icon(Icons.edit, size: 12,
-                color: temLoc && valida ? Colors.green.shade600 : Colors.red),
+                color: valida ? Colors.green.shade600 : Colors.red),
           ],
         ),
       ),
@@ -1651,12 +1664,13 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
             validarEndereco: widget.validarEndereco,
             validarCheio: widget.validarCheio,
             validarVazio: widget.validarVazio,
-            codigoEnabled: !widget.viaTag,
+            codigoEnabled: true,
             barrasEnabled: !widget.viaCodigo,
             qtdPratEnabled: widget.colecaoEncontrada == 'materiais' && !widget.viaTag,
             cheioEnabled: widget.colecaoEncontrada == 'gases' && !widget.viaTag,
             vazioEnabled: widget.colecaoEncontrada == 'gases' && !widget.viaTag,
             loteEnabled: widget.colecaoEncontrada != 'materiais',
+            soCodigo: true,
           ),
         ),
 
@@ -3641,8 +3655,16 @@ class _HomePageState extends State<HomePage> {
             if (_inventarioAtivo != null) _buildHeaderInventario(),
 
             // ⭐ WIDGET DE LOCALIZAÇÃO GEOGRÁFICA
-            // Oculta o widget quando o teclado estiver aberto (telas pequenas como CT60)
+            // Em smartphone portrait (CT60) NÃO renderiza aqui: a localização
+            // já é exibida pelo chip compacto dentro da aba TAG do PageView.
+            // Em tablet/landscape mantém o widget completo. Também oculta
+            // quando o teclado abre em telas pequenas.
             Builder(builder: (context) {
+              final isSmartphonePortrait =
+                  MediaQuery.of(context).size.width < 600 &&
+                  MediaQuery.of(context).orientation == Orientation.portrait;
+              if (isSmartphonePortrait) return const SizedBox.shrink();
+
               final isKeyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
               final isSmallScreen = MediaQuery.of(context).size.height < 700;
               if (isKeyboardOpen && isSmallScreen) return const SizedBox.shrink();
