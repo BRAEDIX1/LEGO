@@ -2957,9 +2957,25 @@ class _HomePageState extends State<HomePage> {
 
   void _onBarrasChanged() {
     _debounce?.cancel();
-    final tag = _barrasCtrl.text;
-    if (tag.endsWith('\n')) {
-      _debounce = Timer(const Duration(milliseconds: 100), () {
+    // O scanner do CT60 não envia Enter (\n) de forma confiável, então não
+    // dependemos disso. A tag tem sempre 9 dígitos: ao completar 9, dispara
+    // a busca automaticamente (mesmo princípio do campo Código aos 8 dígitos).
+    // O endsWith('\n') é mantido como gatilho extra, caso o Enter chegue.
+    final raw = _barrasCtrl.text;
+    final tag = raw.replaceAll('\n', '').trim();
+
+    // Se veio com Enter, busca de imediato.
+    if (raw.endsWith('\n') && tag.isNotEmpty) {
+      _debounce = Timer(const Duration(milliseconds: 50), () {
+        _buscarBarras();
+      });
+      return;
+    }
+
+    // Disparo por tamanho: ao atingir 9 dígitos, aguarda um instante curto
+    // (garante que o scanner terminou de injetar) e busca.
+    if (tag.length >= 9) {
+      _debounce = Timer(const Duration(milliseconds: 150), () {
         _buscarBarras();
       });
     }
