@@ -98,6 +98,7 @@ class SeedImporter {
           unidade: (data['unidade'] ?? '').toString(),
           origem: 'materiais',
           updatedAt: DateTime.tryParse((data['updatedAt'] ?? '').toString()),
+          volume: (data['volume'] as num?)?.toDouble(),
         );
         produtosBatch[codigo] = p;
         processados++;
@@ -139,6 +140,7 @@ class SeedImporter {
           unidade: (data['unidade'] ?? '').toString(),
           origem: 'gases',
           updatedAt: DateTime.tryParse((data['updatedAt'] ?? '').toString()),
+          volume: (data['volume'] as num?)?.toDouble(),
         );
         gasesBatch[codigo] = p;
         processados++;

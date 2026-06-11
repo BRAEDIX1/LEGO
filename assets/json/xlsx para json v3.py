@@ -173,23 +173,32 @@ def main():
         print("ERRO: aba 'barras' não encontrada.")
         sys.exit(1)
 
+    if "materiais" not in wb.sheetnames:
+        print("ERRO: aba 'materiais' não encontrada.")
+        sys.exit(1)
+
     gases             = ler_gases(wb["gases"])
     barras, suspeitos = ler_barras(wb["barras"])
+    # 'materiais' tem a mesma estrutura de 'gases' sem a coluna volume;
+    # ler_gases adiciona volume condicionalmente, então funciona sem alteração.
+    materiais         = ler_gases(wb["materiais"])
 
     versao = datetime.now().strftime("%Y.%m.%d-%H:%M")
 
     resultado = {
-        "version": versao,
-        "gases":   gases,
-        "barras":  barras,
+        "version":   versao,
+        "gases":     gases,
+        "barras":    barras,
+        "materiais": materiais,
     }
 
     with open(saida, "w", encoding="utf-8") as f:
         json.dump(resultado, f, ensure_ascii=False, indent=2)
 
-    print(f"Gases:  {len(gases):,} registros")
-    print(f"Barras: {len(barras):,} registros")
-    print(f"Salvo:  {saida}")
+    print(f"Gases:     {len(gases):,} registros")
+    print(f"Barras:    {len(barras):,} registros")
+    print(f"Materiais: {len(materiais):,} registros")
+    print(f"Salvo:     {saida}")
 
     # Alerta de integridade
     if suspeitos:

@@ -1,6 +1,6 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 05/06/2026 09:15:44  
+> **Gerado em:** 06/06/2026 11:29:27  
 > **Projeto:** `C:\Users\Dell\LEGO`  
 > **Arquivos analisados:** 74 principais + 4 gerados automaticamente
 
@@ -41,7 +41,7 @@
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **74** | **26,582 linhas** |
+| **Total**             | **74** | **27,549 linhas** |
 
 ### Saúde do projeto
 
@@ -88,7 +88,7 @@
       🗃️ produto_local.dart  (24 linhas)
     📁 repositories/
       🏛️ barras_repository.dart  (22 linhas)
-      🏛️ lancamentos_repository.dart  (658 linhas)
+      🏛️ lancamentos_repository.dart  (676 linhas)
       🏛️ produtos_repository.dart  (161 linhas)
   📁 models/
     📦 balanco_financeiro.dart  (256 linhas)
@@ -123,7 +123,7 @@
     🖥️ diagnostics_page.dart  (107 linhas)
     🖥️ first_sync_screen.dart  (308 linhas)
     🖥️ handover_page.dart  (28 linhas)
-    🖥️ home_page.dart  (3620 linhas)  ⚠️
+    🖥️ home_page.dart  (4569 linhas)  ⚠️
     🖥️ home_page.hive.dart  (99 linhas)
     🖥️ login_page.dart  (602 linhas)
     🖥️ update_checker_screen.dart  (213 linhas)
@@ -172,7 +172,7 @@
 - 🔴 **God File**: `detalhe_inventario_screen.dart` tem **985 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `participantes_screen.dart` tem **1058 linhas**. Considere dividir em partes menores.
 - 🔴 **God File**: `relatorio_screen.dart` tem **1108 linhas**. Considere dividir em partes menores.
-- 🔴 **God File**: `home_page.dart` tem **3620 linhas**. Considere dividir em partes menores.
+- 🔴 **God File**: `home_page.dart` tem **4569 linhas**. Considere dividir em partes menores.
 - 🟠 **Violação de camada**: `controle_contagem_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `detalhe_inventario_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`, `participantes`, `estoque`. Mova para um Repositório.
 - 🟠 **Violação de camada**: `historico_screen.dart` (Tela) acessa Firestore diretamente — coleções: `inventarios`. Mova para um Repositório.
@@ -531,7 +531,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Repositório Firestore — coleções: lancamentos. Operações: escrita, delete. Suporta `copyWith`. Serialização JSON/Map.
 
-- **Linhas:** 658
+- **Linhas:** 676
 - **Declarações:** `class LancamentosRepository`, `class UserStats`, `class CleanupStats`, `class CleanupResult`
 - **Métodos públicos:** `addPending()`, `getPending()`, `countPending()`, `countErrors()`, `countManual()`, `watchAllSorted()`, `updatePartial()`, `markSynced()`, `delete()`, `markError()`, `hardDeleteLocal()`, `tagJaExiste()`
 - **Firestore:** `lancamentos` (delete, escrita)
@@ -888,13 +888,13 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Tela da interface — `_Lancamento`, `_Unset`. Suporta `copyWith`. ⚠️ Acessa Firestore diretamente (coleções: inventarios, participantes, lancamentos) — considere mover para um repositório.
 
-- **Linhas:** 3620
-- **Declarações:** `class _Lancamento`, `class _Unset`, `class _LancamentoDoc`, `class _CadastroManualDialog`, `class _CadastroManualDialogState`, `class _ManualCleanupDialog`, `class _ManualCleanupDialogState`, `class _FormPane`, `class _LancamentosPane`, `class _LancamentosListAndTable`
+- **Linhas:** 4569
+- **Declarações:** `class _Lancamento`, `class _Unset`, `class _LancamentoDoc`, `class _CadastroManualDialog`, `class _CadastroManualDialogState`, `class _ManualCleanupDialog`, `class _ManualCleanupDialogState`, `class _FormPane`, `class _CT60PagedLayout`, `class _CT60PagedLayoutState`
 - **Métodos públicos:** `copyWith()`, `setState()`, `setStateLocal()`, `two()`, `showDialog()`
 - **Firestore:** `inventarios` (delete, leitura, stream), `participantes` (delete, leitura, stream), `lancamentos` (leitura)
 - **Recursos:** `copyWith`
 - **Importa (locais):** `inventario_service.dart`, `produtos_repository.dart`, `plant_map_page.dart`, `barras_repository.dart`, `lancamentos_repository.dart`, `lanc_local.dart`, `sync_service.dart`
-- **Pacotes:** cloud_firestore, firebase_auth, connectivity_plus, hive
+- **Pacotes:** cloud_firestore, firebase_auth, connectivity_plus, hive, audioplayers
 - **Importado por:** `main.dart`, `first_sync_screen.dart`, `login_page.dart`
 - **Rotas:** `/login`
 
@@ -1642,6 +1642,8 @@ dependencies:
   package_info_plus: ^8.0.0
   open_filex: ^4.4.0
 
+  audioplayers: ^6.1.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -1847,4 +1849,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 05/06/2026 09:15:44_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 06/06/2026 11:29:27_
