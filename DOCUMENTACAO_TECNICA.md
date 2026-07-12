@@ -1,6 +1,6 @@
 # 📚 Documentação Técnica — LEGO
 
-> **Gerado em:** 06/06/2026 11:29:27  
+> **Gerado em:** 11/06/2026 08:40:15  
 > **Projeto:** `C:\Users\Dell\LEGO`  
 > **Arquivos analisados:** 74 principais + 4 gerados automaticamente
 
@@ -41,7 +41,7 @@
 | 🗃️ Modelos Hive       | 4 | `app_state.dart`, `barra_local.dart`, `lanc_local.dart`, `produto_local.dart` |
 | 📦 Modelos de domínio | 6  | `balanco_financeiro.dart`, `divergencia.dart`, `inventario.dart`, `participante.dart`, `produto_consolidado.dart` _+1 mais_ |
 | 🧩 Widgets            | 11 | `alerta_badge_widget.dart`, `balanco_summary_widget.dart`, `divergencia_card_widget.dart`, `filtros_bar_widget.dart`, `produto_detail_dialog.dart` _+6 mais_ |
-| **Total**             | **74** | **27,549 linhas** |
+| **Total**             | **74** | **27,551 linhas** |
 
 ### Saúde do projeto
 
@@ -113,7 +113,7 @@
     📄 offline_bootstrap.dart  (44 linhas)
     ⚙️ relatorio_service.dart  (582 linhas)
     📄 seed_bootstrap.dart  (86 linhas)
-    📄 seed_importer.dart  (236 linhas)
+    📄 seed_importer.dart  (238 linhas)
     📄 sync_diagnostics.dart  (38 linhas)
     ⚙️ sync_service.dart  (92 linhas)
     ⚙️ update_service.dart  (114 linhas)
@@ -792,7 +792,7 @@ _Possui: `copyWith`, `toJson`/`fromJson`_
 
 > Importa dados mestres do Firestore para o Hive local na primeira execução.
 
-- **Linhas:** 236
+- **Linhas:** 238
 - **Declarações:** `class SyncProgress`, `class SeedImporter`
 - **Métodos públicos:** `importFromAssetJsonWithProgress()`, `log()`, `importFromAssetJson()`
 - **Importa (locais):** `produto_local.dart`, `barra_local.dart`, `hive_boxes.dart`
@@ -1849,4 +1849,4 @@ _Lógica de sync entre Hive (local) e Firestore (nuvem). Alterações aqui afeta
 
 ---
 
-_Documentação gerada por `gerar_documentacao.py` v4.0 — 06/06/2026 11:29:27_
+_Documentação gerada por `gerar_documentacao.py` v4.0 — 11/06/2026 08:40:15_
