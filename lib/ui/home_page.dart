@@ -1829,6 +1829,8 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
           child: _LancamentosPane(
             uid: widget.uid,
             listScroll: widget.listScroll,
+            somenteUltimo: true,
+            detalhadoCT60: true,
           ),
         ),
       ],
@@ -1887,6 +1889,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
 
         // Formulário completo com scroll
         Expanded(
+          flex: 3,
           child: _FormPane(
             formKey: widget.formKey,
             codigoCtrl: widget.codigoCtrl,
@@ -1928,10 +1931,12 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
         // Mini-lista: oculta quando teclado está aberto para máximo espaço
         if (!isKeyboardOpen)
           Expanded(
-            flex: 3,
+            flex: 2,
             child: _LancamentosPane(
               uid: widget.uid,
               listScroll: widget.listScroll,
+              somenteUltimo: true,
+              detalhadoCT60: true,
             ),
           ),
       ],
@@ -2099,10 +2104,14 @@ class _LancamentosPane extends StatelessWidget {
   const _LancamentosPane({
     required this.uid,
     required this.listScroll,
+    this.somenteUltimo = false,
+    this.detalhadoCT60 = false,
   });
 
   final String? uid;
   final ScrollController listScroll;
+  final bool somenteUltimo;
+  final bool detalhadoCT60;
 
   @override
   Widget build(BuildContext context) {
@@ -2126,7 +2135,15 @@ class _LancamentosPane extends StatelessWidget {
           return const Center(child: Text('Nenhum lançamento encontrado.'));
         }
 
-        final rows = docs.map<_LancamentoDoc>((m) {
+        final docsExibidos = somenteUltimo && docs.isNotEmpty
+            ? <LancLocal>[
+                docs.reduce(
+                  (a, b) => a.createdAtLocal.isAfter(b.createdAtLocal) ? a : b,
+                ),
+              ]
+            : docs;
+
+        final rows = docsExibidos.map<_LancamentoDoc>((m) {
           return _LancamentoDoc(
             m.idLocal,
             _Lancamento(
@@ -2153,6 +2170,7 @@ class _LancamentosPane extends StatelessWidget {
         return _LancamentosListAndTable(
           itens: rows,
           listScroll: listScroll,
+          detalhadoCT60: detalhadoCT60,
         );
       },
     );
@@ -2423,10 +2441,12 @@ class _LancamentosListAndTable extends StatelessWidget {
   const _LancamentosListAndTable({
     required this.itens,
     required this.listScroll,
+    this.detalhadoCT60 = false,
   });
 
   final List<_LancamentoDoc> itens;
   final ScrollController listScroll;
+  final bool detalhadoCT60;
 
   String _fmtHora(DateTime dt) {
     String two(int n) => n.toString().padLeft(2, '0');
@@ -2435,6 +2455,10 @@ class _LancamentosListAndTable extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (detalhadoCT60) {
+      return _buildUltimoLancamentoCT60(context);
+    }
+
     return Card(
       elevation: 0,
       margin: EdgeInsets.zero,
@@ -2448,6 +2472,159 @@ class _LancamentosListAndTable extends StatelessWidget {
           final isWideTable = c.maxWidth >= 960;
           return isWideTable ? _buildTable(context) : _buildList(context);
         }),
+      ),
+    );
+  }
+
+  Widget _buildUltimoLancamentoCT60(BuildContext context) {
+    if (itens.isEmpty) {
+      return const Center(child: Text('Nenhum lançamento encontrado.'));
+    }
+
+    final it = itens.first;
+    final repo = LancamentosRepository(uid: FirebaseAuth.instance.currentUser!.uid);
+    final d = it.data;
+    final theme = Theme.of(context);
+    final c = theme.colorScheme;
+
+    String valorOuTraco(String? value) {
+      final v = value?.trim() ?? '';
+      return v.isEmpty ? '—' : v;
+    }
+
+    String statusTexto() {
+      switch (d.status) {
+        case LancStatus.pending:
+          return 'Pendente';
+        case LancStatus.synced:
+          return 'Sincronizado';
+        case LancStatus.error:
+          return 'Erro';
+      }
+    }
+
+    Widget info(String rotulo, String valor) {
+      return Text.rich(
+        TextSpan(
+          style: theme.textTheme.bodySmall?.copyWith(fontSize: 11.5),
+          children: [
+            TextSpan(
+              text: '$rotulo: ',
+              style: const TextStyle(fontWeight: FontWeight.w600),
+            ),
+            TextSpan(text: valor),
+          ],
+        ),
+      );
+    }
+
+    return Card(
+      elevation: 0,
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(
+        side: BorderSide(color: c.outlineVariant),
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(8, 6, 8, 6),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                SizedBox(
+                  width: 38,
+                  height: 38,
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: _StatusButton(doc: it, repo: repo),
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Text(
+                    d.descricao,
+                    softWrap: true,
+                    style: theme.textTheme.bodyMedium?.copyWith(
+                      fontSize: 12.5,
+                      fontWeight: FontWeight.w700,
+                      height: 1.15,
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 2),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                  padding: EdgeInsets.zero,
+                  tooltip: 'Editar',
+                  onPressed: () => _editar(context, it, repo),
+                  icon: const Icon(Icons.edit, size: 19),
+                ),
+                IconButton(
+                  visualDensity: VisualDensity.compact,
+                  constraints: const BoxConstraints.tightFor(width: 34, height: 34),
+                  padding: EdgeInsets.zero,
+                  tooltip: 'Excluir',
+                  onPressed: () => _excluir(context, it, repo),
+                  icon: const Icon(Icons.delete_outline, size: 19),
+                ),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Wrap(
+              spacing: 10,
+              runSpacing: 2,
+              children: [
+                info('Código', d.codigo),
+                if (d.tag.trim().isNotEmpty) info('Tag', d.tag),
+                info('Unid', valorOuTraco(d.unidade)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            info('Local', valorOuTraco(d.localizacaoNome)),
+            const SizedBox(height: 2),
+            Wrap(
+              spacing: 10,
+              runSpacing: 2,
+              children: [
+                info('Cheio', _fmtQtde(d.cheio)),
+                info('Vazio', _fmtQtde(d.vazio)),
+                info('Qtd', _fmtQtde(d.quantidade)),
+                info('Prat', valorOuTraco(d.prateleira)),
+              ],
+            ),
+            const SizedBox(height: 2),
+            Wrap(
+              spacing: 10,
+              runSpacing: 2,
+              children: [
+                info('Lote', valorOuTraco(d.lote)),
+                if (d.ordemServico != null && d.ordemServico!.trim().isNotEmpty)
+                  info('OS', d.ordemServico!.trim()),
+              ],
+            ),
+            const SizedBox(height: 3),
+            Row(
+              children: [
+                Expanded(
+                  child: Text(
+                    _fmtHora(d.hora),
+                    style: theme.textTheme.bodySmall?.copyWith(fontSize: 11),
+                  ),
+                ),
+                Text(
+                  statusTexto(),
+                  style: theme.textTheme.bodySmall?.copyWith(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
