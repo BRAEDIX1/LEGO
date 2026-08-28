@@ -1961,6 +1961,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
           child: _LancamentosPane(
             uid: widget.uid,
             listScroll: widget.listScroll,
+            detalhadoCT60: true,
           ),
         ),
       ],
@@ -2201,6 +2202,12 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
     return v < 0 ? 0.0 : v;
   }
 
+  String _fmtDataHoraRegistro(DateTime dt) {
+    String two(int n) => n.toString().padLeft(2, '0');
+    return '${two(dt.day)}/${two(dt.month)}/${dt.year} '
+        '${two(dt.hour)}:${two(dt.minute)}:${two(dt.second)}';
+  }
+
   final edited = await showModalBottomSheet<_Lancamento>(
     context: context,
     isScrollControlled: true,
@@ -2218,6 +2225,39 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
           children: [
             Text('Editar lançamento', style: Theme.of(ctx).textTheme.titleMedium),
             const SizedBox(height: 8),
+
+            // Identificação do registro — somente leitura.
+            // Ajuda o operador a confirmar qual lançamento está alterando.
+            Container(
+              width: double.infinity,
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              decoration: BoxDecoration(
+                color: Theme.of(ctx).colorScheme.primary.withOpacity(0.05),
+                border: Border.all(
+                  color: Theme.of(ctx).colorScheme.outlineVariant,
+                ),
+                borderRadius: BorderRadius.circular(10),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    doc.data.descricao,
+                    softWrap: true,
+                    style: Theme.of(ctx).textTheme.bodyMedium?.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 3),
+                  Text(
+                    'Lançado em: ${_fmtDataHoraRegistro(doc.data.hora)}',
+                    style: Theme.of(ctx).textTheme.bodySmall,
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(height: 8),
+
             Row(
               children: [
                 Expanded(
@@ -2456,7 +2496,9 @@ class _LancamentosListAndTable extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (detalhadoCT60) {
-      return _buildUltimoLancamentoCT60(context);
+      return itens.length <= 1
+          ? _buildUltimoLancamentoCT60(context)
+          : _buildHistoricoDetalhadoCT60(context);
     }
 
     return Card(
@@ -2472,6 +2514,34 @@ class _LancamentosListAndTable extends StatelessWidget {
           final isWideTable = c.maxWidth >= 960;
           return isWideTable ? _buildTable(context) : _buildList(context);
         }),
+      ),
+    );
+  }
+
+  Widget _buildHistoricoDetalhadoCT60(BuildContext context) {
+    final c = Theme.of(context).colorScheme;
+
+    return Scrollbar(
+      controller: listScroll,
+      interactive: true,
+      thumbVisibility: true,
+      child: ListView.separated(
+        controller: listScroll,
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: EdgeInsets.zero,
+        itemCount: itens.length,
+        separatorBuilder: (_, __) => Divider(
+          height: 6,
+          thickness: 1,
+          color: c.outlineVariant,
+        ),
+        itemBuilder: (context, i) {
+          return _LancamentosListAndTable(
+            itens: <_LancamentoDoc>[itens[i]],
+            listScroll: listScroll,
+            detalhadoCT60: true,
+          );
+        },
       ),
     );
   }
