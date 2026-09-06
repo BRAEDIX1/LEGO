@@ -106,10 +106,12 @@ class _LancamentoDoc {
 class _CadastroManualDialog extends StatefulWidget {
   final String? codigoInicial;
   final String? tagInicial;
+  final bool modoVazio;
 
   const _CadastroManualDialog({
     this.codigoInicial,
     this.tagInicial,
+    this.modoVazio = false,
   });
 
   @override
@@ -212,7 +214,7 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                     const SizedBox(width: 8),
                     Expanded(
                       child: Text(
-                        'Cadastro de Tag',
+                        widget.modoVazio ? 'Cadastro de Produto' : 'Cadastro de Tag',
                         style: Theme.of(context).textTheme.headlineSmall,
                       ),
                     ),
@@ -220,23 +222,27 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Informe o código do gás e toque em Buscar. '
-                  'Se existir, os dados serão preenchidos automaticamente.',
+                  widget.modoVazio
+                      ? 'Informe os dados do produto. Este cadastro será lançado como 1 cilindro vazio.'
+                      : 'Informe o código do gás e toque em Buscar. '
+                        'Se existir, os dados serão preenchidos automaticamente.',
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
                 const SizedBox(height: 16),
 
-                // Tag (somente leitura — já conhecida)
-                TextFormField(
-                  initialValue: widget.tagInicial ?? '',
-                  readOnly: true,
-                  decoration: const InputDecoration(
-                    labelText: 'Tag',
-                    prefixIcon: Icon(Icons.qr_code_scanner),
-                    border: OutlineInputBorder(),
+                // TAG só existe no fluxo de identificação individual.
+                if (!widget.modoVazio) ...[
+                  TextFormField(
+                    initialValue: widget.tagInicial ?? '',
+                    readOnly: true,
+                    decoration: const InputDecoration(
+                      labelText: 'Tag',
+                      prefixIcon: Icon(Icons.qr_code_scanner),
+                      border: OutlineInputBorder(),
+                    ),
                   ),
-                ),
-                const SizedBox(height: 12),
+                  const SizedBox(height: 12),
+                ],
 
                 // Código + botão Buscar
                 Row(
@@ -380,23 +386,25 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                 ),
                 const SizedBox(height: 12),
 
-                // Lote (obrigatório para tag)
-                TextFormField(
-                  controller: _loteCtrl,
-                  decoration: const InputDecoration(
-                    labelText: 'Lote *',
-                    hintText: 'Informe o lote',
-                    prefixIcon: Icon(Icons.inventory),
-                    border: OutlineInputBorder(),
+                // Lote pertence ao fluxo de TAG; no modo Vazios fica vazio.
+                if (!widget.modoVazio) ...[
+                  TextFormField(
+                    controller: _loteCtrl,
+                    decoration: const InputDecoration(
+                      labelText: 'Lote *',
+                      hintText: 'Informe o lote',
+                      prefixIcon: Icon(Icons.inventory),
+                      border: OutlineInputBorder(),
+                    ),
+                    validator: (value) {
+                      if (value == null || value.trim().isEmpty) {
+                        return 'Lote é obrigatório';
+                      }
+                      return null;
+                    },
+                    textCapitalization: TextCapitalization.characters,
                   ),
-                  validator: (value) {
-                    if (value == null || value.trim().isEmpty) {
-                      return 'Lote é obrigatório';
-                    }
-                    return null;
-                  },
-                  textCapitalization: TextCapitalization.characters,
-                ),
+                ],
 
                 const SizedBox(height: 24),
 
@@ -426,18 +434,20 @@ class _CadastroManualDialogState extends State<_CadastroManualDialog> {
                           'unidade': _unidadeCtrl.text.trim().toUpperCase(),
                           'quantidade': 0.0,
                           'prateleira': '',
-                          'lote': _loteCtrl.text.trim(),
+                          'lote': widget.modoVazio ? null : _loteCtrl.text.trim(),
                           'volume': double.tryParse(_volumeCtrl.text.replaceAll(',', '.')),
-                          'tag': widget.tagInicial ?? '',
-                          // Tag de gás cadastrada manualmente: 1 cheio, 0 vazio
-                          'cheio': 1.0,
-                          'vazio': 0.0,
+                          'tag': widget.modoVazio ? null : (widget.tagInicial ?? ''),
+                          // Vazios: 0 cheio / 1 vazio. TAG mantém o comportamento original.
+                          'cheio': widget.modoVazio ? 0.0 : 1.0,
+                          'vazio': widget.modoVazio ? 1.0 : 0.0,
                         };
 
                         Navigator.of(context).pop(resultado);
                       },
                       icon: const Icon(Icons.save),
-                      label: const Text('Salvar e Lançar'),
+                      label: Text(
+                        widget.modoVazio ? 'Salvar e lançar vazio' : 'Salvar e Lançar',
+                      ),
                     ),
                   ],
                 ),
@@ -1452,6 +1462,8 @@ class _FormPane extends StatelessWidget {
 // _CT60PagedLayout — Layout exclusivo para smartphone portrait (CT60)
 // Página 0: Modo TAG (scanner, zero teclado)
 // Página 1: Modo Código (manual, scroll completo)
+// Página 2: Modo Vazios (scanner contínuo de códigos)
+// Página 3: Histórico completo
 // =====================================================================
 class _CT60PagedLayout extends StatefulWidget {
   const _CT60PagedLayout({
@@ -1487,6 +1499,7 @@ class _CT60PagedLayout extends StatefulWidget {
     required this.onToggleTimer,
     required this.onBuscar,
     required this.onBuscarBarras,
+    required this.onLerCodigoVazio,
     required this.onConfirmar,
     required this.onSelecionarSugestao,
     required this.onBuscarSugestoes,
@@ -1532,6 +1545,7 @@ class _CT60PagedLayout extends StatefulWidget {
   final VoidCallback onToggleTimer;
   final VoidCallback onBuscar;
   final VoidCallback onBuscarBarras;
+  final Future<void> Function(String codigo) onLerCodigoVazio;
   final VoidCallback onConfirmar;
   final void Function(String) onSelecionarSugestao;
   final Future<List<String>> Function(String) onBuscarSugestoes;
@@ -1550,11 +1564,18 @@ class _CT60PagedLayout extends StatefulWidget {
 
 class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
   final _pageController = PageController();
+  final _vaziosCodigoCtrl = TextEditingController();
+  final _vaziosCodigoFocus = FocusNode();
+  Timer? _vaziosDebounce;
+  bool _processandoVazio = false;
   int _currentPage = 0;
 
   @override
   void dispose() {
     _pageController.dispose();
+    _vaziosDebounce?.cancel();
+    _vaziosCodigoCtrl.dispose();
+    _vaziosCodigoFocus.dispose();
     super.dispose();
   }
 
@@ -1563,6 +1584,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
   bool get _temLancamentoEmAndamento {
     return widget.codigoCtrl.text.trim().isNotEmpty ||
         widget.barrasCtrl.text.trim().isNotEmpty ||
+        _vaziosCodigoCtrl.text.trim().isNotEmpty ||
         widget.qtdCtrl.text.trim().isNotEmpty ||
         widget.enderecoCtrl.text.trim().isNotEmpty ||
         widget.cheioCtrl.text.trim().isNotEmpty ||
@@ -1625,7 +1647,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
     );
   }
 
-  // Chip compacto de localização para a página TAG
+  // Chip compacto de localização para as páginas de leitura (TAG e Vazios)
   Widget _buildLocalizacaoChip(BuildContext context) {
     final temLoc = widget.localizacaoId != null;
     final valida = widget.localizacaoValida;
@@ -1943,7 +1965,125 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
     );
   }
 
-  // ── PÁGINA 2: HISTÓRICO COMPLETO ──────────────────────────────────
+  void _onVaziosCodigoChanged(String raw) {
+    if (_processandoVazio) return;
+
+    _vaziosDebounce?.cancel();
+    final codigo = raw.replaceAll('\n', '').trim();
+
+    // Mantém o mesmo critério operacional do campo Código existente:
+    // o código de produto usa 8 dígitos e dispara sem depender do Enter do CT60.
+    if (codigo.length > 8) {
+      final truncado = codigo.substring(0, 8);
+      _vaziosCodigoCtrl.value = TextEditingValue(
+        text: truncado,
+        selection: const TextSelection.collapsed(offset: 8),
+      );
+      _vaziosDebounce = Timer(const Duration(milliseconds: 150), () {
+        if (mounted && !_processandoVazio && _currentPage == 2) {
+          _processarLeituraVazio();
+        }
+      });
+    } else if (codigo.length == 8) {
+      _vaziosDebounce = Timer(const Duration(milliseconds: 150), () {
+        if (mounted && !_processandoVazio && _currentPage == 2) {
+          _processarLeituraVazio();
+        }
+      });
+    } else if (raw.endsWith('\n') && codigo.isNotEmpty) {
+      _vaziosDebounce = Timer(const Duration(milliseconds: 50), () {
+        if (mounted && !_processandoVazio && _currentPage == 2) {
+          _processarLeituraVazio();
+        }
+      });
+    }
+
+    // Atualiza o bloqueio de troca de aba enquanto há código ainda não processado.
+    setState(() {});
+  }
+
+  Future<void> _processarLeituraVazio() async {
+    if (_processandoVazio) return;
+
+    _vaziosDebounce?.cancel();
+    final codigo = _vaziosCodigoCtrl.text.replaceAll('\n', '').trim();
+    if (codigo.isEmpty) {
+      _vaziosCodigoFocus.requestFocus();
+      return;
+    }
+
+    setState(() => _processandoVazio = true);
+    try {
+      await widget.onLerCodigoVazio(codigo);
+    } finally {
+      _vaziosCodigoCtrl.clear();
+      if (mounted) {
+        setState(() => _processandoVazio = false);
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (!mounted || _currentPage != 2) return;
+          SystemChannels.textInput.invokeMethod('TextInput.hide');
+          _vaziosCodigoFocus.requestFocus();
+        });
+      }
+    }
+  }
+
+  // ── PÁGINA 2: VAZIOS POR LEITURA DE CÓDIGO ───────────────────────
+  Widget _buildPaginaVazios(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+          child: _buildLocalizacaoChip(context),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(8, 4, 8, 4),
+          child: TextFormField(
+            controller: _vaziosCodigoCtrl,
+            focusNode: _vaziosCodigoFocus,
+            enabled: !_processandoVazio,
+            decoration: _dec(
+              context,
+              label: 'Código',
+              hint: 'Bipe o código do produto',
+              suffix: IconButton(
+                icon: _processandoVazio
+                    ? const SizedBox(
+                        width: 18,
+                        height: 18,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      )
+                    : const Icon(Icons.qr_code_scanner, size: 18),
+                onPressed: _processandoVazio ? null : _processarLeituraVazio,
+              ),
+            ),
+            textInputAction: TextInputAction.search,
+            onChanged: _onVaziosCodigoChanged,
+            onFieldSubmitted: (_) => _processarLeituraVazio(),
+            style: const TextStyle(fontSize: 13),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(10, 0, 10, 6),
+          child: Text(
+            'Leitura contínua: cada código válido registra 1 cilindro vazio.',
+            style: Theme.of(context).textTheme.bodySmall,
+          ),
+        ),
+        Expanded(
+          child: _LancamentosPane(
+            uid: widget.uid,
+            listScroll: widget.listScroll,
+            somenteUltimo: true,
+            detalhadoCT60: true,
+          ),
+        ),
+      ],
+    );
+  }
+
+  // ── PÁGINA 3: HISTÓRICO COMPLETO ──────────────────────────────────
   Widget _buildPaginaHistorico(BuildContext context) {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1998,7 +2138,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: _currentPage == 0
                         ? Theme.of(context).colorScheme.primary
@@ -2021,7 +2161,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: _currentPage == 1
                         ? Theme.of(context).colorScheme.primary
@@ -2038,15 +2178,38 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
                   ),
                 ),
               ),
-              // Dot página Histórico
+              // Dot página Vazios
               GestureDetector(
                 onTap: () => _irParaPagina(2),
                 child: AnimatedContainer(
                   duration: const Duration(milliseconds: 250),
                   margin: const EdgeInsets.symmetric(horizontal: 4),
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
                   decoration: BoxDecoration(
                     color: _currentPage == 2
+                        ? Theme.of(context).colorScheme.primary
+                        : Colors.grey.shade300,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: Text(
+                    '♻ Vazios',
+                    style: TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                      color: _currentPage == 2 ? Colors.white : Colors.grey.shade600,
+                    ),
+                  ),
+                ),
+              ),
+              // Dot página Histórico
+              GestureDetector(
+                onTap: () => _irParaPagina(3),
+                child: AnimatedContainer(
+                  duration: const Duration(milliseconds: 250),
+                  margin: const EdgeInsets.symmetric(horizontal: 4),
+                  padding: const EdgeInsets.symmetric(horizontal: 9, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: _currentPage == 3
                         ? Theme.of(context).colorScheme.primary
                         : Colors.grey.shade300,
                     borderRadius: BorderRadius.circular(12),
@@ -2056,7 +2219,7 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
                     style: TextStyle(
                       fontSize: 12,
                       fontWeight: FontWeight.w600,
-                      color: _currentPage == 2 ? Colors.white : Colors.grey.shade600,
+                      color: _currentPage == 3 ? Colors.white : Colors.grey.shade600,
                     ),
                   ),
                 ),
@@ -2078,20 +2241,27 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
               setState(() => _currentPage = index);
 
               if (index == 0) {
-                // Voltou para a aba TAG: garante modo scanner puro
+                // Aba TAG: scanner físico no campo de TAG.
                 FocusScope.of(context).unfocus();
                 SystemChannels.textInput.invokeMethod('TextInput.hide');
                 WidgetsBinding.instance.addPostFrameCallback((_) {
                   if (mounted) widget.barrasFocus.requestFocus();
                 });
+              } else if (index == 2) {
+                // Aba Vazios: scanner físico em um campo próprio de código.
+                FocusScope.of(context).unfocus();
+                SystemChannels.textInput.invokeMethod('TextInput.hide');
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _vaziosCodigoFocus.requestFocus();
+                });
               } else {
-                // Saiu da aba TAG: solta o foco para não prender o cursor
                 FocusScope.of(context).unfocus();
               }
             },
             children: [
               _buildPaginaTag(context),
               _buildPaginaCodigo(context),
+              _buildPaginaVazios(context),
               _buildPaginaHistorico(context),
             ],
           ),
@@ -3511,6 +3681,128 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  // Alerta específico da leitura contínua de códigos da aba Vazios.
+  // Não usa cache, campo ou regra de TAG.
+  Future<void> _alertarCodigoNaoEncontrado() async {
+    HapticFeedback.heavyImpact();
+    try {
+      await _alertPlayer.stop();
+      await _alertPlayer.play(AssetSource('sounds/sino_alerta.mp3'));
+    } catch (e) {
+      debugPrint('Falha ao tocar alerta de código: $e');
+      SystemSound.play(SystemSoundType.alert);
+    }
+  }
+
+  Future<void> _registrarVazioPorCodigoLido(String codigoLido) async {
+    if (_isSubmitting) return;
+
+    final codigo = codigoLido.trim().toUpperCase();
+    if (codigo.isEmpty) return;
+
+    // Mesma exigência de localização dos demais lançamentos.
+    if (!_localizacaoValida()) {
+      final tinhaLocalizacao = _localizacaoId != null;
+      setState(() {
+        _localizacaoId = null;
+        _localizacaoNome = null;
+        _localizacaoSetadaEm = null;
+      });
+      _snack(
+        tinhaLocalizacao
+            ? 'Localização expirada. Confirme onde você está.'
+            : 'Selecione uma localização antes de lançar',
+        error: true,
+      );
+      return;
+    }
+
+    setState(() => _isSubmitting = true);
+
+    try {
+      final produto = await ProdutosRepository().getByCodigoPreferGases(codigo);
+
+      if (produto == null) {
+        await _alertarCodigoNaoEncontrado();
+        if (!mounted) return;
+
+        final confirma = await showDialog<bool>(
+          context: context,
+          builder: (ctx) => AlertDialog(
+            title: const Text('Produto não encontrado'),
+            content: Text(
+              'O código $codigo não foi encontrado no sistema.\nDeseja cadastrar manualmente?',
+            ),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Cancelar'),
+              ),
+              FilledButton.icon(
+                onPressed: () => Navigator.pop(ctx, true),
+                icon: const Icon(Icons.add),
+                label: const Text('Cadastrar'),
+              ),
+            ],
+          ),
+        );
+
+        if (confirma == true) {
+          await _mostrarOpcaoCadastroManual(
+            codigo: codigo,
+            modoVazio: true,
+          );
+        }
+        return;
+      }
+
+      if (produto.origem != 'gases') {
+        await _alertarCodigoNaoEncontrado();
+        _snack('O código lido não corresponde a um gás.', error: true);
+        return;
+      }
+
+      final user = FirebaseAuth.instance.currentUser;
+      if (user == null) {
+        _snack('Faça login para registrar o lançamento', error: true);
+        return;
+      }
+
+      final repo = LancamentosRepository(uid: user.uid);
+      await repo.addPending(
+        uid: user.uid,
+        inventarioId: _inventarioAtivo ?? '',
+        contagemId: _contagemAtiva ?? '',
+        codigo: codigo,
+        descricao: produto.descricao,
+        unidade: produto.unidade,
+        prateleira: '',
+        quantidade: 0.0,
+        cheio: 0.0,
+        vazio: 1.0,
+        lote: null,
+        tag: null,
+        volume: produto.volume,
+        registro: TipoRegistro.automatico,
+        localizacaoId: _localizacaoId,
+        localizacaoNome: _localizacaoNome,
+        ordemServico: null,
+      );
+
+      _snack('Vazio registrado: ${produto.descricao}');
+
+      // Mantém o padrão offline-first: salva primeiro, sincroniza depois.
+      Future.microtask(() => _tentarSincronizar(user.uid));
+    } catch (e) {
+      debugPrint('Erro ao registrar vazio por código: $e');
+      _snack('Erro ao registrar vazio: $e', error: true);
+    } finally {
+      if (mounted) {
+        setState(() => _isSubmitting = false);
+      }
+    }
+  }
+
   Future<void> _buscarBarras() async {
     final tag = _barrasCtrl.text.trim();
     _tagAtual = tag;
@@ -3669,12 +3961,17 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
-  Future<bool> _mostrarOpcaoCadastroManual({String? codigo, String? tag}) async {
+  Future<bool> _mostrarOpcaoCadastroManual({
+    String? codigo,
+    String? tag,
+    bool modoVazio = false,
+  }) async {
     final resultado = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => _CadastroManualDialog(
         codigoInicial: codigo,
         tagInicial: tag,
+        modoVazio: modoVazio,
       ),
     );
 
@@ -3709,7 +4006,11 @@ class _HomePageState extends State<HomePage> {
         localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
       );
 
-      _snack('Produto cadastrado e lançado manualmente');
+      _snack(
+        modoVazio
+            ? 'Produto cadastrado e 1 vazio lançado'
+            : 'Produto cadastrado e lançado manualmente',
+      );
 
       // Limpar campos
       _formKey.currentState?.reset();
@@ -3728,7 +4029,9 @@ class _HomePageState extends State<HomePage> {
         _viaTag = false;
         _viaCodigo = false;
       });
-      _barrasFocus.requestFocus();
+      if (!modoVazio) {
+        _barrasFocus.requestFocus();
+      }
 
       // Sincronizar
       await _tentarSincronizar(FirebaseAuth.instance.currentUser!.uid);
@@ -4240,7 +4543,7 @@ class _HomePageState extends State<HomePage> {
 
             // ⭐ WIDGET DE LOCALIZAÇÃO GEOGRÁFICA
             // Em smartphone portrait (CT60) NÃO renderiza aqui: a localização
-            // já é exibida pelo chip compacto dentro da aba TAG do PageView.
+            // já é exibida pelo chip compacto nas abas de leitura do PageView.
             // Em tablet/landscape mantém o widget completo. Também oculta
             // quando o teclado abre em telas pequenas.
             Builder(builder: (context) {
@@ -4266,7 +4569,7 @@ class _HomePageState extends State<HomePage> {
               constraints.maxWidth < 600 && MediaQuery.of(context).orientation == Orientation.portrait;
 
           if (isSmartphonePortrait) {
-            // ========== CT60: LAYOUT PAGEVIEW (TAG | CÓDIGO) ==========
+            // ========== CT60: LAYOUT PAGEVIEW (TAG | CÓDIGO | VAZIOS | HISTÓRICO) ==========
             return _CT60PagedLayout(
               // Controladores compartilhados
               formKey: _formKey,
@@ -4305,6 +4608,7 @@ class _HomePageState extends State<HomePage> {
               // Callbacks
               onBuscar: _buscarProduto,
               onBuscarBarras: _buscarBarras,
+              onLerCodigoVazio: _registrarVazioPorCodigoLido,
               onConfirmar: _confirmar,
               onSelecionarSugestao: _selecionarSugestao,
               onBuscarSugestoes: _buscarSugestoes,
