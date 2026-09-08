@@ -11,6 +11,8 @@ import 'package:lego/services/sync_service.dart';
 import 'package:connectivity_plus/connectivity_plus.dart';
 import 'dart:collection';
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'package:lego/data/repositories/lancamentos_repository.dart' show CleanupStats, CleanupResult;
 import 'package:hive/hive.dart';
 import 'package:flutter/services.dart';
@@ -3115,6 +3117,9 @@ class _HomePageState extends State<HomePage> {
   bool _viaCodigo = false;
   String? _colecaoEncontrada;
   bool _isSubmitting = false;
+  bool _enviandoRelatorio = false;
+  static const String _relatorioBackendUrl =
+      'https://lego-relatorio-backend-1082826789172.southamerica-east1.run.app/enviar-relatorio';
   String? _tagAtual;
 // ⭐ ADICIONAR ESTAS 2 LINHAS
   String? _inventarioAtivo;
@@ -4213,6 +4218,159 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  Future<void> _solicitarEnvioRelatorio() async {
+    if (_enviandoRelatorio) return;
+
+    final senhaCtrl = TextEditingController();
+
+    final senha = await showDialog<String>(
+      context: context,
+      barrierDismissible: false,
+      builder: (ctx) => AlertDialog(
+        icon: const Icon(Icons.lock_outline),
+        title: const Text('Enviar relatório'),
+        content: TextField(
+          controller: senhaCtrl,
+          autofocus: true,
+          obscureText: true,
+          enableSuggestions: false,
+          autocorrect: false,
+          decoration: const InputDecoration(
+            labelText: 'Senha',
+            hintText: 'Informe a senha de envio',
+            border: OutlineInputBorder(),
+          ),
+          onSubmitted: (valor) {
+            if (valor.isNotEmpty) {
+              Navigator.of(ctx).pop(valor);
+            }
+          },
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton.icon(
+            onPressed: () {
+              final valor = senhaCtrl.text;
+              if (valor.isNotEmpty) {
+                Navigator.of(ctx).pop(valor);
+              }
+            },
+            icon: const Icon(Icons.send),
+            label: const Text('Enviar'),
+          ),
+        ],
+      ),
+    );
+
+    senhaCtrl.dispose();
+
+    if (senha == null) return;
+    if (senha.isEmpty) {
+      _snack('Informe a senha para enviar o relatório.', error: true);
+      return;
+    }
+
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) {
+      _snack('Faça login para enviar o relatório.', error: true);
+      return;
+    }
+
+    final connectivityResult = await Connectivity().checkConnectivity();
+    if (connectivityResult == ConnectivityResult.none) {
+      _snack('Sem conexão com a internet. Relatório não enviado.', error: true);
+      return;
+    }
+
+    if (mounted) {
+      setState(() => _enviandoRelatorio = true);
+    }
+
+    HttpClient? client;
+
+    try {
+      // Antes do relatório, tenta enviar os lançamentos pendentes do usuário atual.
+      await _tentarSincronizar(user.uid);
+
+      final token = await user.getIdToken(true);
+      if (token == null || token.isEmpty) {
+        throw StateError('Não foi possível obter o token de autenticação.');
+      }
+
+      client = HttpClient()
+        ..connectionTimeout = const Duration(seconds: 20);
+
+      final req = await client.postUrl(Uri.parse(_relatorioBackendUrl));
+      req.headers.contentType = ContentType.json;
+      req.headers.set(
+        HttpHeaders.authorizationHeader,
+        'Bearer $token',
+      );
+      req.write(jsonEncode({'senha': senha}));
+
+      final resp = await req.close().timeout(const Duration(minutes: 5));
+      final respostaTexto = await utf8.decoder.bind(resp).join();
+
+      Map<String, dynamic> resposta = <String, dynamic>{};
+      if (respostaTexto.trim().isNotEmpty) {
+        final decoded = jsonDecode(respostaTexto);
+        if (decoded is Map<String, dynamic>) {
+          resposta = decoded;
+        } else if (decoded is Map) {
+          resposta = Map<String, dynamic>.from(decoded);
+        }
+      }
+
+      final okHttp = resp.statusCode >= 200 && resp.statusCode < 300;
+      final okBackend = resposta['ok'] == true;
+
+      if (okHttp && okBackend) {
+        final mensagem =
+            resposta['mensagem']?.toString() ?? 'Relatório enviado com sucesso.';
+        final destinatarios = resposta['destinatarios'];
+
+        _snack(
+          destinatarios is num
+              ? '$mensagem Destinatários: ${destinatarios.toInt()}.'
+              : mensagem,
+        );
+      } else {
+        String mensagem =
+            resposta['erro']?.toString() ?? 'Não foi possível enviar o relatório.';
+
+        if (resp.statusCode == 403) {
+          mensagem = 'Senha incorreta.';
+        } else if (resp.statusCode == 409) {
+          mensagem =
+              resposta['erro']?.toString() ??
+              'Já existe um relatório sendo gerado. Aguarde.';
+        } else if (resp.statusCode == 401) {
+          mensagem = 'Sessão inválida. Faça login novamente.';
+        }
+
+        _snack(mensagem, error: true);
+      }
+    } on TimeoutException {
+      _snack(
+        'O servidor demorou para responder. O envio não foi confirmado.',
+        error: true,
+      );
+    } on SocketException {
+      _snack('Falha de conexão com o servidor do relatório.', error: true);
+    } catch (e) {
+      debugPrint('Erro ao enviar relatório: $e');
+      _snack('Erro ao enviar relatório: $e', error: true);
+    } finally {
+      client?.close(force: true);
+      if (mounted) {
+        setState(() => _enviandoRelatorio = false);
+      }
+    }
+  }
+
   Future<void> _sincronizar() async {
     final uid = FirebaseAuth.instance.currentUser?.uid;
     if (uid == null) {
@@ -4480,6 +4638,27 @@ class _HomePageState extends State<HomePage> {
           ],
         ),
         actions: [
+          Stack(
+            alignment: Alignment.center,
+            children: [
+              IconButton(
+                tooltip: 'Enviar relatório',
+                onPressed:
+                    _enviandoRelatorio ? null : _solicitarEnvioRelatorio,
+                icon: const Icon(Icons.mail_outline),
+              ),
+              if (_enviandoRelatorio)
+                const Positioned(
+                  right: 7,
+                  bottom: 7,
+                  child: SizedBox(
+                    width: 13,
+                    height: 13,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                ),
+            ],
+          ),
           IconButton(
             tooltip: 'Limpeza Manual',
             icon: const Icon(Icons.cleaning_services),

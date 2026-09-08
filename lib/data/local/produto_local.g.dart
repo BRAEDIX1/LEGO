@@ -22,13 +22,14 @@ class ProdutoLocalAdapter extends TypeAdapter<ProdutoLocal> {
       unidade: fields[2] as String,
       origem: fields[3] as String,
       updatedAt: fields[4] as DateTime?,
+      volume: fields[5] as double?,
     );
   }
 
   @override
   void write(BinaryWriter writer, ProdutoLocal obj) {
     writer
-      ..writeByte(5)
+      ..writeByte(6)
       ..writeByte(0)
       ..write(obj.codigo)
       ..writeByte(1)
@@ -38,7 +39,9 @@ class ProdutoLocalAdapter extends TypeAdapter<ProdutoLocal> {
       ..writeByte(3)
       ..write(obj.origem)
       ..writeByte(4)
-      ..write(obj.updatedAt);
+      ..write(obj.updatedAt)
+      ..writeByte(5)
+      ..write(obj.volume);
   }
 
   @override
