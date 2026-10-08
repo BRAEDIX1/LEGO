@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "155608278634",
+    "project_id": "lego-teste",
+    "storage_bucket": "lego-teste.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:155608278634:android:0aacb8e34d3f1f48e5cc13",
+        "android_client_info": {
+          "package_name": "com.example.lego.teste"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA_uHwZx-b3gcSQwyxWQMwMAK4iIrCild8"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

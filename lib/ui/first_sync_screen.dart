@@ -5,7 +5,7 @@ import 'package:lego/ui/login_page.dart';
 import 'package:flutter/material.dart';
 import 'package:lego/services/seed_bootstrap.dart';
 import 'package:lego/services/seed_importer.dart';
-import 'package:lego/ui/home_page.dart';
+import 'package:lego/ui/resolver_tela_inicial.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
 class FirstSyncScreen extends StatelessWidget {
@@ -47,12 +47,14 @@ class FirstSyncScreen extends StatelessWidget {
                     : await Hive.openBox('app_state');
                 await state.put('last_seeded_version_code', currentBuild);
                 final user = FirebaseAuth.instance.currentUser;
+                // B18: com usuário logado, a tela seguinte sai da regra única
+                final Widget destino = user != null
+                    ? await resolverTelaInicial()
+                    : const LoginPage();
                 if (!context.mounted) return;
                 Navigator.pushReplacement(
                   context,
-                  MaterialPageRoute(
-                    builder: (_) => user != null ? const HomePage() : const LoginPage(),
-                  ),
+                  MaterialPageRoute(builder: (_) => destino),
                 );
               });
             }

@@ -25,6 +25,27 @@ android {
         versionName = flutter.versionName
     }
 
+    // >>> 3C (D13): dois ambientes no mesmo código.
+    // prod    = app oficial, igual ao de sempre (com.example.lego, "lego").
+    // homolog = app de TESTE (com.example.lego.teste, "LEGO TESTE"), que convive
+    //           com o oficial no mesmo aparelho e fala só com o projeto lego-teste
+    //           (google-services.json em src/homolog/).
+    // O sabor não pode se chamar "teste": o AGP proíbe nomes que começam com
+    // "test" (B59). O pacote e o projeto continuam ".teste" / "lego-teste".
+    // Sem versionNameSuffix: a versão precisa continuar X.Y.Z (3B).
+    flavorDimensions += "ambiente"
+    productFlavors {
+        create("prod") {
+            dimension = "ambiente"
+            resValue("string", "app_name", "lego")
+        }
+        create("homolog") {
+            dimension = "ambiente"
+            applicationIdSuffix = ".teste"
+            resValue("string", "app_name", "LEGO TESTE")
+        }
+    }
+
     // >>> Usa Java 17 (bate com o JDK 17 configurado)
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17

@@ -50,6 +50,9 @@ dev_dependencies:
 flutter:
   uses-material-design: true
 
+  # 3C (D13): sem --flavor, o build gera o app oficial (prod).
+  default-flavor: prod
+
   assets:
     - assets/firestore_dump.json
     - assets/plantas/

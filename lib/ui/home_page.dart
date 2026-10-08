@@ -1,4 +1,5 @@
 import 'package:lego/services/inventario_service.dart';
+import 'package:lego/services/auth_service.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -17,6 +18,67 @@ import 'package:lego/data/repositories/lancamentos_repository.dart' show Cleanup
 import 'package:hive/hive.dart';
 import 'package:flutter/services.dart';
 import 'package:audioplayers/audioplayers.dart';
+import 'package:lego/config/fluxo2_config.dart';
+import 'package:lego/models/inventario.dart' show Rodadas;
+import 'package:lego/models/sessao_contagem.dart';
+import 'package:lego/services/compatibilidade_service.dart';
+import 'package:lego/services/mobile_sync_service.dart';
+import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';
+
+// =====================================================================
+// FLUXO 2 (Lote 3A): helpers de sessão usados pelos widgets de topo
+// (_LancamentosPane, _editar, _excluir, _StatusButton). Com LEGO_FLUXO2
+// desligado, todos devolvem o comportamento legado.
+// =====================================================================
+
+/// Sessão Completa atual, ou null (legado, Simples ou sem sessão).
+SessaoContagem? _sessaoCompletaAtual() {
+  if (!Fluxo2Config.habilitado) return null;
+  final s = MobileSyncService().sessaoAtual;
+  return (s != null && s.isCompleta) ? s : null;
+}
+
+/// B38: escopo da lista e da checagem de TAG.
+/// - Chave desligada: null (legado, sem filtro, como antes).
+/// - Sessão Completa: inventário + rodada da sessão.
+/// - Sessão Simples: só registros SEM inventário/rodada (`''`, `''`), para a
+///   Simples não mostrar nem permitir editar/excluir lançamentos da Completa.
+(String, String)? _escopoLista() {
+  if (!Fluxo2Config.habilitado) return null;
+  final c = _sessaoCompletaAtual();
+  if (c != null) return (c.inventarioId ?? '', c.rodada ?? '');
+  return ('', '');
+}
+
+/// B24: editar/excluir liberado agora? Legado e Simples: sim, como hoje.
+bool _mutacaoLiberada() =>
+    _sessaoCompletaAtual() == null || MobileSyncService().podeMutarAgora;
+
+/// 3B (B41): no legado, lançamento VINCULADO não é alterado enquanto o
+/// vínculo central está bloqueado por compatibilidade. Fluxo 2: sem efeito.
+bool _alteracaoLegadaPermitida(_LancamentoDoc doc) =>
+    Fluxo2Config.habilitado ||
+    MobileSyncService().podeAlterarLegado(doc.inventarioId);
+
+String _motivoAlteracaoLegadaBloqueada() =>
+    'Lançamento vinculado a inventário: edição bloqueada até atualizar o '
+    'aparelho. ${MobileSyncService().vinculoControladoBloqueado ?? MobileSyncService().motivoBloqueioCentral ?? ''}'.trim();
+
+/// B22: na sessão Completa o status de sincronização é somente leitura.
+bool _statusSomenteLeitura() => _sessaoCompletaAtual() != null;
+
+/// B33: no connectivity_plus 6.x, `checkConnectivity()` devolve uma LISTA.
+/// Sem conexão = lista vazia ou só `none`. A comparação antiga com
+/// `ConnectivityResult.none` nunca era verdadeira.
+bool _semConexao(List<ConnectivityResult> resultados) =>
+    resultados.isEmpty ||
+    resultados.every((r) => r == ConnectivityResult.none);
+
+String _motivoMutacaoBloqueada() {
+  final sync = MobileSyncService();
+  if (sync.finalizacaoEmAndamento) return 'Finalização em andamento. Aguarde.';
+  return sync.sessaoAtual?.motivoBloqueio ?? 'Operação não permitida.';
+}
 
 class _Lancamento {
   final LancStatus status;
@@ -100,7 +162,10 @@ class _Unset { const _Unset(); }
 class _LancamentoDoc {
   final String id;
   final _Lancamento data;
-  const _LancamentoDoc(this.id, this.data);
+
+  /// 3B (B41): inventário do registro, para o bloqueio de edição legada.
+  final String? inventarioId;
+  const _LancamentoDoc(this.id, this.data, {this.inventarioId});
 }
 
 // Adicionar após a classe _LancamentoDoc
@@ -796,8 +861,10 @@ class _ManualCleanupDialogState extends State<_ManualCleanupDialog> {
         }
       }
 
-      // Se ainda houver pendentes em qualquer usuário do aparelho, confirma
-      if (pendentesDispositivo > 0) {
+      // Se ainda houver pendentes em qualquer usuário do aparelho, confirma.
+      // Fluxo 2: a limpeza preserva tudo que não foi sincronizado, então não
+      // há perda a confirmar.
+      if (pendentesDispositivo > 0 && !Fluxo2Config.habilitado) {
         if (!mounted) return;
 
         // Detalha quantos pendentes pertencem a outros usuários (não enviáveis)
@@ -855,7 +922,9 @@ class _ManualCleanupDialogState extends State<_ManualCleanupDialog> {
 
     // Após limpar todos os registros do Hive, esvazia também o cache de tags
     // em memória, para que qualquer tag possa ser relida imediatamente.
-    if (result.success) {
+    // Fluxo 2: registros não sincronizados continuam no aparelho, então o
+    // cache de TAG é mantido.
+    if (result.success && !Fluxo2Config.habilitado) {
       _HomePageState._tagsCacheAtivo?.clear();
     }
 
@@ -2293,8 +2362,16 @@ class _LancamentosPane extends StatelessWidget {
     }
 
     final repo = LancamentosRepository(uid: uid!);
+    // B23: na sessão Completa, só o inventário + rodada da sessão.
+    // B38: na sessão Simples, só os registros sem inventário/rodada.
+    final escopo = _escopoLista();
     return StreamBuilder<List<LancLocal>>(
-      stream: repo.watchAllSorted(),
+      stream: escopo == null
+          ? repo.watchAllSorted()
+          : repo.watchAllSorted(
+              inventarioId: escopo.$1,
+              contagemId: escopo.$2,
+            ),
       builder: (context, snap) {
         if (snap.hasError) {
           return Center(child: Text('Erro ao carregar: ${snap.error}'));
@@ -2337,6 +2414,7 @@ class _LancamentosPane extends StatelessWidget {
               localizacaoId:   m.localizacaoId,
               localizacaoNome: m.localizacaoNome,
             ),
+            inventarioId: m.inventarioId,
           );
         }).toList();
 
@@ -2355,6 +2433,17 @@ String _fmtQtde(double v) {
 }
 
 Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosRepository repo) async {
+  // B24: participação finalizada / finalização em curso não editam
+  if (!_mutacaoLiberada()) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_motivoMutacaoBloqueada())));
+    return;
+  }
+  if (!_alteracaoLegadaPermitida(doc)) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_motivoAlteracaoLegadaBloqueada())));
+    return;
+  }
   // Cheio e vazio são sempre inteiros (cilindros não têm fração)
   final qtdCtrl   = TextEditingController(text: doc.data.quantidade == doc.data.quantidade.truncateToDouble()
       ? doc.data.quantidade.toInt().toString()
@@ -2599,6 +2688,15 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
   );
 
   if (edited != null) {
+    // B24: a edição conta como mutação em curso para a finalização
+    final aut = _sessaoCompletaAtual() != null
+        ? MobileSyncService().iniciarMutacao()
+        : null;
+    if (aut != null && !aut.permitida) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(aut.motivo ?? 'Operação não permitida.')));
+      return;
+    }
     try {
       await repo.updatePartial(
         doc.id,
@@ -2617,11 +2715,24 @@ Future<void> _editar(BuildContext context, _LancamentoDoc doc, LancamentosReposi
     } catch (e) {
       ScaffoldMessenger.of(context)
           .showSnackBar(SnackBar(content: Text('Erro ao atualizar: $e')));
+    } finally {
+      if (aut != null) MobileSyncService().concluirMutacao(aut);
     }
   }
 }
 
 Future<void> _excluir(BuildContext context, _LancamentoDoc doc, LancamentosRepository repo) async {
+  // B24: participação finalizada / finalização em curso não excluem
+  if (!_mutacaoLiberada()) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_motivoMutacaoBloqueada())));
+    return;
+  }
+  if (!_alteracaoLegadaPermitida(doc)) {
+    ScaffoldMessenger.of(context)
+        .showSnackBar(SnackBar(content: Text(_motivoAlteracaoLegadaBloqueada())));
+    return;
+  }
   final ok = await showDialog<bool>(
     context: context,
     builder: (ctx) => AlertDialog(
@@ -2635,8 +2746,18 @@ Future<void> _excluir(BuildContext context, _LancamentoDoc doc, LancamentosRepos
   );
   if (ok != true) return;
 
+  // B24: exclusão conta como mutação em curso; B21: na sessão Completa vira
+  // tombstone até o Firestore confirmar
+  final completa = _sessaoCompletaAtual() != null;
+  final aut = completa ? MobileSyncService().iniciarMutacao() : null;
+  if (aut != null && !aut.permitida) {
+    ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(aut.motivo ?? 'Operação não permitida.')));
+    return;
+  }
+
   try {
-    await repo.delete(doc.id);
+    await repo.delete(doc.id, manterTombstoneSeFalhar: completa);
     // Libera a tag do cache em memória para permitir releitura imediata,
     // sem precisar fechar o app.
     final tagExcluida = doc.data.tag;
@@ -2646,6 +2767,8 @@ Future<void> _excluir(BuildContext context, _LancamentoDoc doc, LancamentosRepos
     ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Lançamento excluído')));
   } catch (e) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Erro ao excluir: $e')));
+  } finally {
+    if (aut != null) MobileSyncService().concluirMutacao(aut);
   }
 }
 
@@ -2801,7 +2924,7 @@ class _LancamentosListAndTable extends StatelessWidget {
                   constraints: const BoxConstraints.tightFor(width: 34, height: 34),
                   padding: EdgeInsets.zero,
                   tooltip: 'Editar',
-                  onPressed: () => _editar(context, it, repo),
+                  onPressed: !_mutacaoLiberada() ? null : () => _editar(context, it, repo),
                   icon: const Icon(Icons.edit, size: 19),
                 ),
                 IconButton(
@@ -2809,7 +2932,7 @@ class _LancamentosListAndTable extends StatelessWidget {
                   constraints: const BoxConstraints.tightFor(width: 34, height: 34),
                   padding: EdgeInsets.zero,
                   tooltip: 'Excluir',
-                  onPressed: () => _excluir(context, it, repo),
+                  onPressed: !_mutacaoLiberada() ? null : () => _excluir(context, it, repo),
                   icon: const Icon(Icons.delete_outline, size: 19),
                 ),
               ],
@@ -2931,13 +3054,13 @@ class _LancamentosListAndTable extends StatelessWidget {
                 children: [
                   IconButton.filledTonal(
                     tooltip: 'Editar',
-                    onPressed: () => _editar(context, itens[i], repo),
+                    onPressed: !_mutacaoLiberada() ? null : () => _editar(context, itens[i], repo),
                     icon: const Icon(Icons.edit),
                   ),
                   const SizedBox(width: 6),
                   IconButton.filledTonal(
                     tooltip: 'Excluir',
-                    onPressed: () => _excluir(context, itens[i], repo),
+                    onPressed: !_mutacaoLiberada() ? null : () => _excluir(context, itens[i], repo),
                     icon: const Icon(Icons.delete_outline),
                   ),
                 ],
@@ -3016,12 +3139,12 @@ class _LancamentosListAndTable extends StatelessWidget {
               children: [
                 IconButton.filledTonal(
                   tooltip: 'Editar',
-                  onPressed: () => _editar(context, it, repo),
+                  onPressed: !_mutacaoLiberada() ? null : () => _editar(context, it, repo),
                   icon: const Icon(Icons.edit),
                 ),
                 IconButton.filledTonal(
                   tooltip: 'Excluir',
-                  onPressed: () => _excluir(context, it, repo),
+                  onPressed: !_mutacaoLiberada() ? null : () => _excluir(context, it, repo),
                   icon: const Icon(Icons.delete_outline),
                 ),
               ],
@@ -3059,7 +3182,11 @@ class _StatusButton extends StatelessWidget {
 
     return IconButton(
       tooltip: tooltip,
-      onPressed: doc.data.status == LancStatus.error
+      // B22: na sessão Completa o status só muda pelo motor de sincronização
+      // 3B (B41): no legado, registro vinculado não muda com vínculo bloqueado
+      onPressed: doc.data.status == LancStatus.error ||
+              _statusSomenteLeitura() ||
+              !_alteracaoLegadaPermitida(doc)
           ? null
           : () async {
         try {
@@ -3154,6 +3281,16 @@ class _HomePageState extends State<HomePage> {
 
   StreamSubscription<DocumentSnapshot>? _participanteListener;
 
+  // ---------- Fluxo 2 (Lote 3A) ----------
+  bool get _fluxo2 => Fluxo2Config.habilitado;
+  SessaoContagem? _sessao;
+  StreamSubscription<SessaoContagem?>? _sessaoSub;
+
+  /// B45 (3B): a validação do vínculo salvo (L4) termina em segundo plano;
+  /// a faixa de bloqueio precisa ser redesenhada quando ela acaba.
+  StreamSubscription<ModoOperacao>? _modoSub;
+  bool _navegandoParaEscolha = false;
+
   void _setupParticipanteListener() {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null || _inventarioAtivo == null) return;
@@ -3191,11 +3328,21 @@ class _HomePageState extends State<HomePage> {
     // Limpeza automática por inatividade
     _initAutoCleanup();
 
-    // ⭐ Carregar dados
-    _buscarInventarioAtivo();
+    if (_fluxo2) {
+      // T15: no fluxo 2 inventário, rodada e permissão vêm só da sessão
+      _iniciarSessaoFluxo2();
+    } else {
+      // 3B (B45): redesenha a faixa quando a L4 termina
+      _modoSub = MobileSyncService().modoStream.listen((_) {
+        if (mounted) setState(() {});
+      });
 
-    // ✅ ADICIONAR ESTAS 2 LINHAS
-    _buscarDadosParticipante();
+      // ⭐ Carregar dados (legado)
+      _buscarInventarioAtivo();
+
+      // ✅ ADICIONAR ESTAS 2 LINHAS
+      _buscarDadosParticipante();
+    }
     _carregarCacheTags();
   }
 
@@ -3257,13 +3404,188 @@ class _HomePageState extends State<HomePage> {
         : 'Timer reativado — a área expira em $_localizacaoTimeoutMin min');
   }
 
+  // ==================== FLUXO 2: SESSÃO (Lote 3A) ====================
+
+  void _iniciarSessaoFluxo2() {
+    final sync = MobileSyncService();
+    _sessao = sync.sessaoAtual;
+    _sessaoSub = sync.sessaoStream.listen(_onSessaoMudou);
+    if (_sessao == null) {
+      // Sem sessão válida: a escolha Simples/Completa vem antes (B18)
+      WidgetsBinding.instance.addPostFrameCallback((_) => _irParaEscolha());
+    } else {
+      sync.informarPendentesLocais();
+    }
+  }
+
+  void _onSessaoMudou(SessaoContagem? nova) {
+    if (!mounted) return;
+    if (nova == null) {
+      _irParaEscolha(); // T19: inventário encerrado/cancelado
+      return;
+    }
+    final mudouEscopo = _sessao?.tipo != nova.tipo ||
+        _sessao?.inventarioId != nova.inventarioId ||
+        _sessao?.rodada != nova.rodada;
+    setState(() => _sessao = nova);
+    if (mudouEscopo) _carregarCacheTags();
+  }
+
+  void _irParaEscolha() {
+    if (!mounted || _navegandoParaEscolha) return;
+    _navegandoParaEscolha = true;
+    _sessaoSub?.cancel();
+    _sessaoSub = null;
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(builder: (_) => const ModoOperacaoScreen()),
+    );
+  }
+
+  /// T22: volta à escolha SEM finalizar a participação.
+  void _trocarTipoContagem() {
+    if (MobileSyncService().finalizacaoEmAndamento) return;
+    _irParaEscolha();
+  }
+
+  /// Autorização única de gravação (T18, B19, B24).
+  /// Legado: IDs da tela, como hoje. Fluxo 2: IDs da sessão + contador.
+  AutorizacaoMutacao _autorizarGravacao() {
+    if (!_fluxo2) {
+      // 3B (B39, B41, B42): o serviço decide se vincula, grava sem vínculo
+      // (só sem inventário ou com Autônomo explícito) ou nega.
+      return MobileSyncService()
+          .autorizarGravacaoLegada(_inventarioAtivo ?? '', _contagemAtiva ?? '');
+    }
+    return MobileSyncService().iniciarMutacao();
+  }
+
+  void _encerrarGravacao(AutorizacaoMutacao autorizacao) {
+    if (_fluxo2) MobileSyncService().concluirMutacao(autorizacao);
+  }
+
+  /// Checagem rápida, sem contabilizar, antes de validar ou abrir diálogos.
+  bool _podeGravarAgora() => !_fluxo2 || MobileSyncService().podeMutarAgora;
+
+  bool get _limpezaBloqueada {
+    final s = _sessao;
+    return _fluxo2 &&
+        s != null &&
+        s.isCompleta &&
+        (s.podeLancar || MobileSyncService().finalizacaoEmAndamento);
+  }
+
+  /// "Finalizar minha contagem" (T20, B17, B19).
+  Future<void> _finalizarMinhaParticipacaoFluxo2() async {
+    final s = _sessao;
+    if (s == null || !s.isCompleta) return;
+    final rotulo = Rodadas.rotulo(s.rodada ?? '');
+
+    final confirma = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Finalizar minha contagem?'),
+        content: Text(
+          'Você vai encerrar a SUA participação na $rotulo do '
+          'Inventário ${s.numeroFormatado}. Os demais participantes continuam.\n\n'
+          'Antes, o app envia ao servidor tudo que ainda está no aparelho. '
+          'Depois de finalizar, você não poderá lançar, editar nem excluir '
+          'nesta rodada.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+            child: const Text('Finalizar'),
+          ),
+        ],
+      ),
+    );
+    if (confirma != true) return;
+
+    final resultado = await MobileSyncService().finalizarMinhaParticipacao();
+    if (!mounted) return;
+    _snack(resultado.mensagem, error: !resultado.sucesso);
+    setState(() => _sessao = MobileSyncService().sessaoAtual);
+  }
+
+  Widget? _buildFabFluxo2() {
+    final s = _sessao;
+    final finalizando = MobileSyncService().finalizacaoEmAndamento;
+    if (s == null || !s.isCompleta || (!s.podeLancar && !finalizando)) return null;
+    return FloatingActionButton.extended(
+      onPressed: finalizando ? null : _finalizarContagem,
+      icon: finalizando
+          ? const SizedBox(
+              width: 18,
+              height: 18,
+              child: CircularProgressIndicator(strokeWidth: 2),
+            )
+          : const Icon(Icons.check_circle),
+      label: Text(finalizando ? 'Finalizando...' : 'Finalizar minha contagem'),
+      backgroundColor: Colors.orange,
+    );
+  }
+
+  /// Cabeçalho fixo do coletor (§10): "Inventário 001 | C1 | Em andamento".
+  Widget _buildHeaderSessao() {
+    final s = _sessao!;
+    final finalizando = MobileSyncService().finalizacaoEmAndamento;
+    final Color cor;
+    final IconData icone;
+    if (s.isSimples) {
+      cor = Colors.blue;
+      icone = Icons.smartphone;
+    } else if (finalizando) {
+      cor = Colors.orange;
+      icone = Icons.hourglass_top;
+    } else if (s.podeLancar) {
+      cor = Colors.green;
+      icone = Icons.play_arrow;
+    } else {
+      cor = Colors.grey;
+      icone = Icons.lock;
+    }
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: cor.withValues(alpha: 0.12),
+        border: Border(bottom: BorderSide(color: cor, width: 2)),
+      ),
+      child: Row(
+        children: [
+          Icon(icone, color: cor, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              finalizando ? '${s.rotuloCabecalho} (finalizando...)' : s.rotuloCabecalho,
+              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ⭐ ADICIONAR ESTE MÉTODO COMPLETO
   Future<void> _buscarInventarioAtivo() async {
+    // B47 (3B): resultado assíncrono só vale para quem o iniciou
+    final uidInicio = FirebaseAuth.instance.currentUser?.uid;
+    bool usuarioMudou() =>
+        FirebaseAuth.instance.currentUser?.uid != uidInicio;
     try {
       final inventario = await _inventarioService.buscarInventarioAtivo();
+      final sync = MobileSyncService();
+      if (usuarioMudou()) return;
 
       if (inventario == null) {
         debugPrint('ℹ️ Nenhum inventário ativo encontrado');
+        sync.registrarVinculoCentralLegado(detectado: false, paraUid: uidInicio);
+        if (!mounted) return;
         setState(() {
           _inventarioAtivo = null;
           _codigoInventario = null;
@@ -3271,6 +3593,46 @@ class _HomePageState extends State<HomePage> {
         return;
       }
 
+      // T33b/L1 (3B): vínculo central só com compatibilidade liberada.
+      // Bloqueado: nenhum ID central na tela (sem participante, sem
+      // listener) e gravação NEGADA até escolha explícita de Autônomo (B41).
+      // Enquanto confere, o inventário já conta como detectado e sem
+      // compatibilidade: gravação negada, nunca sem vínculo (revisão 3B).
+      sync.registrarVinculoCentralLegado(
+        detectado: true,
+        compat: null,
+        motivo: 'Conferindo a compatibilidade deste aparelho...',
+        codigo: inventario.codigo,
+        paraUid: uidInicio,
+      );
+      if (mounted) setState(() {});
+      final compat = await CompatibilidadeService()
+          .avaliarComCache(PlataformaCompat.mobile);
+      if (usuarioMudou()) return;
+      if (!compat.liberado) {
+        debugPrint('🔒 Vínculo com ${inventario.codigo} bloqueado: ${compat.mensagem}');
+        sync.registrarVinculoCentralLegado(
+          detectado: true,
+          compat: compat.resultado,
+          motivo: compat.mensagem,
+          codigo: inventario.codigo,
+          paraUid: uidInicio,
+        );
+        if (!mounted) return;
+        setState(() {
+          _inventarioAtivo = null;
+          _codigoInventario = null;
+        });
+        return;
+      }
+
+      sync.registrarVinculoCentralLegado(
+        detectado: true,
+        compat: compat.resultado,
+        codigo: inventario.codigo,
+        paraUid: uidInicio,
+      );
+      if (!mounted) return;
       setState(() {
         _inventarioAtivo = inventario.id;
         _codigoInventario = inventario.codigo;
@@ -3301,8 +3663,20 @@ class _HomePageState extends State<HomePage> {
       final box = await Hive.openBox<LancLocal>('lancamentos_${user.uid}');
 
       // ✅ Construir Set de tags (O(n) UMA VEZ, depois O(1) para sempre)
+      // T21: na sessão Completa, só as TAGs do mesmo inventário + rodada.
+      // B38: na sessão Simples, só as TAGs dos registros sem inventário/rodada.
+      final escopo = _escopoLista();
       _tagsCache = box.values
           .where((lanc) => lanc.tag != null && lanc.tag!.isNotEmpty)
+          .where((lanc) =>
+              escopo == null ||
+              SessaoContagem.escopoContem(
+                lancInventarioId: lanc.inventarioId,
+                lancContagemId: lanc.contagemId,
+                lancErrorCode: lanc.errorCode,
+                inventarioId: escopo.$1,
+                contagemId: escopo.$2,
+              ))
           .map((lanc) => lanc.tag!)
           .toSet();
       _tagsCacheAtivo = _tagsCache;
@@ -3425,6 +3799,10 @@ class _HomePageState extends State<HomePage> {
 
   /// Finalizar contagem atual
   Future<void> _finalizarContagem() async {
+    if (_fluxo2) {
+      await _finalizarMinhaParticipacaoFluxo2();
+      return;
+    }
     try {
       if (_inventarioAtivo == null || _contagemAtiva == null) {
         _snack('Erro: Inventário não carregado');
@@ -3586,6 +3964,10 @@ class _HomePageState extends State<HomePage> {
     _ordemServicoFocus.dispose();
     _listScroll.dispose();
     _alertPlayer.dispose();
+    // H9: o listener do participante nunca era cancelado
+    _participanteListener?.cancel();
+    _sessaoSub?.cancel();
+    _modoSub?.cancel();
     super.dispose();
   }
 
@@ -3705,6 +4087,11 @@ class _HomePageState extends State<HomePage> {
     final codigo = codigoLido.trim().toUpperCase();
     if (codigo.isEmpty) return;
 
+    if (!_podeGravarAgora()) {
+      _snack(_motivoMutacaoBloqueada(), error: true);
+      return;
+    }
+
     // Mesma exigência de localização dos demais lançamentos.
     if (!_localizacaoValida()) {
       final tinhaLocalizacao = _localizacaoId != null;
@@ -3774,10 +4161,16 @@ class _HomePageState extends State<HomePage> {
       }
 
       final repo = LancamentosRepository(uid: user.uid);
+      final aut = _autorizarGravacao(); // T18, B19
+      if (!aut.permitida) {
+        _snack(aut.motivo ?? 'Lançamento não permitido.', error: true);
+        return;
+      }
+      try {
       await repo.addPending(
         uid: user.uid,
-        inventarioId: _inventarioAtivo ?? '',
-        contagemId: _contagemAtiva ?? '',
+        inventarioId: aut.inventarioId,
+        contagemId: aut.contagemId,
         codigo: codigo,
         descricao: produto.descricao,
         unidade: produto.unidade,
@@ -3793,6 +4186,9 @@ class _HomePageState extends State<HomePage> {
         localizacaoNome: _localizacaoNome,
         ordemServico: null,
       );
+      } finally {
+        _encerrarGravacao(aut);
+      }
 
       _snack('Vazio registrado: ${produto.descricao}');
 
@@ -3839,7 +4235,16 @@ class _HomePageState extends State<HomePage> {
     // Verificar se TAG já foi lançada
     try {
       final repo = LancamentosRepository(uid: FirebaseAuth.instance.currentUser!.uid);
-      final jaExiste = await repo.tagJaExiste(tag);
+      // T21: na sessão Completa a repetição é checada por inventário + rodada.
+      // B38: na sessão Simples, só contra registros sem inventário/rodada.
+      final escopo = _escopoLista();
+      final jaExiste = escopo == null
+          ? await repo.tagJaExiste(tag)
+          : await repo.tagJaExiste(
+              tag,
+              inventarioId: escopo.$1,
+              contagemId: escopo.$2,
+            );
 
       if (jaExiste) {
         setState(() {
@@ -3971,6 +4376,10 @@ class _HomePageState extends State<HomePage> {
     String? tag,
     bool modoVazio = false,
   }) async {
+    if (!_podeGravarAgora()) {
+      _snack(_motivoMutacaoBloqueada(), error: true);
+      return false;
+    }
     final resultado = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => _CadastroManualDialog(
@@ -3981,6 +4390,12 @@ class _HomePageState extends State<HomePage> {
     );
 
     if (resultado != null) {
+      final aut = _autorizarGravacao(); // T18, B19
+      if (!aut.permitida) {
+        _snack(aut.motivo ?? 'Lançamento não permitido.', error: true);
+        return false;
+      }
+      try {
       // Salvar produto manual
       final prodRepo = ProdutosRepository();
       await prodRepo.addManualProduct(
@@ -3994,8 +4409,8 @@ class _HomePageState extends State<HomePage> {
       final repo = LancamentosRepository(uid: FirebaseAuth.instance.currentUser!.uid);
       await repo.addPending(
         uid: FirebaseAuth.instance.currentUser!.uid,  // ✅ ADICIONAR
-        inventarioId: _inventarioAtivo ?? '',  // ✅ Garantir não-null
-        contagemId: _contagemAtiva ?? '',      // ✅ Garantir não-null
+        inventarioId: aut.inventarioId,  // T18: só da sessão no fluxo 2
+        contagemId: aut.contagemId,
         codigo: resultado['codigo'] ?? '',
         descricao: resultado['descricao'] ?? '',
         unidade: resultado['unidade'] ?? '',
@@ -4010,6 +4425,9 @@ class _HomePageState extends State<HomePage> {
         localizacaoId:   _localizacaoId,    // ⭐ LOCALIZAÇÃO
         localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
       );
+      } finally {
+        _encerrarGravacao(aut);
+      }
 
       _snack(
         modoVazio
@@ -4049,9 +4467,11 @@ class _HomePageState extends State<HomePage> {
     try {
       final connectivityResult = await Connectivity().checkConnectivity();
       debugPrint('Resultado da conectividade: $connectivityResult');
-      if (connectivityResult != ConnectivityResult.none) {
+      if (!_semConexao(connectivityResult)) { // B33
         debugPrint('Sincronizando lançamentos para uid: $uid');
         await SyncService.syncLancamentos(uid);
+        // B17: mantém o monitor do analista informado
+        if (_fluxo2) unawaited(MobileSyncService().informarPendentesLocais());
         if (mounted) {
           _snack('Sincronização concluída');
         }
@@ -4071,6 +4491,11 @@ class _HomePageState extends State<HomePage> {
 
   Future<void> _confirmar() async {
     if (_isSubmitting) return;
+
+    if (!_podeGravarAgora()) {
+      _snack(_motivoMutacaoBloqueada(), error: true);
+      return;
+    }
 
     // ⭐ Bloquear se localização não selecionada ou expirada
     if (!_localizacaoValida()) {
@@ -4152,10 +4577,16 @@ class _HomePageState extends State<HomePage> {
 
     try {
       final repo = LancamentosRepository(uid: FirebaseAuth.instance.currentUser!.uid);
+      final aut = _autorizarGravacao(); // T18, B19
+      if (!aut.permitida) {
+        _snack(aut.motivo ?? 'Lançamento não permitido.', error: true);
+        return;
+      }
+      try {
       await repo.addPending(
         uid: FirebaseAuth.instance.currentUser!.uid,  // ✅ ADICIONAR
-        inventarioId: _inventarioAtivo ?? '',  // ✅ Garantir não-null
-        contagemId: _contagemAtiva ?? '',      // ✅ Garantir não-null
+        inventarioId: aut.inventarioId,  // T18: só da sessão no fluxo 2
+        contagemId: aut.contagemId,
         codigo: codigo,
         descricao: _descricao ?? '',
         unidade: _unidade ?? '',
@@ -4171,6 +4602,9 @@ class _HomePageState extends State<HomePage> {
         localizacaoNome: _localizacaoNome,  // ⭐ LOCALIZAÇÃO
         ordemServico: ordemServico.isEmpty ? null : ordemServico,
       );
+      } finally {
+        _encerrarGravacao(aut);
+      }
 
       debugPrint('Lançamento registrado com sucesso no Hive');
       _snack('Lançamento registrado com sucesso');
@@ -4280,7 +4714,7 @@ class _HomePageState extends State<HomePage> {
     }
 
     final connectivityResult = await Connectivity().checkConnectivity();
-    if (connectivityResult == ConnectivityResult.none) {
+    if (_semConexao(connectivityResult)) { // B33
       _snack('Sem conexão com a internet. Relatório não enviado.', error: true);
       return;
     }
@@ -4662,7 +5096,8 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             tooltip: 'Limpeza Manual',
             icon: const Icon(Icons.cleaning_services),
-            onPressed: () async {
+            // Fluxo 2: indisponível durante Contagem Completa em andamento
+            onPressed: _limpezaBloqueada ? null : () async {
               final repo = LancamentosRepository(
                 uid: FirebaseAuth.instance.currentUser!.uid,
               );
@@ -4670,6 +5105,8 @@ class _HomePageState extends State<HomePage> {
                 context: context,
                 builder: (context) => _ManualCleanupDialog(repo: repo),
               );
+              // B28: reconstrói o cache de TAG a partir do que ficou no Hive
+              if (_fluxo2) await _carregarCacheTags();
             },
           ),
           Stack(
@@ -4691,10 +5128,27 @@ class _HomePageState extends State<HomePage> {
                 ),
             ],
           ),
+          if (_fluxo2)
+            IconButton(
+              tooltip: 'Trocar tipo de contagem',
+              onPressed: _trocarTipoContagem,
+              icon: const Icon(Icons.swap_horiz),
+            ),
           IconButton(
             tooltip: 'Sair',
             onPressed: () async {
-              await FirebaseAuth.instance.signOut();
+              if (_fluxo2) {
+                // B16: a sessão não sobrevive ao logout. O listener sai antes
+                // para não disputar a navegação com o /login.
+                await _sessaoSub?.cancel();
+                _sessaoSub = null;
+                await MobileSyncService().limparSessao();
+              }
+              // B60: sair pelo AuthService fecha a caixa local do usuário.
+              // Com FirebaseAuth.signOut() direto, a caixa ficava aberta e o
+              // login seguinte do mesmo usuário, sem fechar o app, falhava com
+              // HiveError "box ... is already open".
+              await AuthService().signOut();
               if (mounted) {
                 Navigator.of(context).pushReplacementNamed('/login');
               }
@@ -4703,7 +5157,9 @@ class _HomePageState extends State<HomePage> {
           ),
         ],
       ),
-      floatingActionButton: _statusContagem == 'em_andamento' && _podeContar
+      floatingActionButton: _fluxo2
+          ? _buildFabFluxo2()
+          : _statusContagem == 'em_andamento' && _podeContar
           ? FloatingActionButton.extended(
         onPressed: _finalizarContagem,
         icon: const Icon(Icons.check_circle),
@@ -4716,9 +5172,17 @@ class _HomePageState extends State<HomePage> {
       )
           : null,
         body: Column(
-            children: [if (_statusContagem == 'nao_iniciada')
+            children: [if (_fluxo2) ...[
+              // §10: inventário, rodada e status sempre visíveis
+              if (_sessao != null) _buildHeaderSessao(),
+            ] else if (_statusContagem == 'nao_iniciada')
             // Header do inventário
             if (_inventarioAtivo != null) _buildHeaderInventario(),
+
+            // 3B (B41): vínculo central legado bloqueado por compatibilidade
+            // B45: inclui o bloqueio do vínculo Controlado salvo (L4)
+            if (!_fluxo2 && MobileSyncService().motivoBloqueioLegado != null)
+              _buildBloqueioCentral(),
 
             // ⭐ WIDGET DE LOCALIZAÇÃO GEOGRÁFICA
             // Em smartphone portrait (CT60) NÃO renderiza aqui: a localização
@@ -4940,6 +5404,116 @@ class _HomePageState extends State<HomePage> {
         ),
     );
   }
+  /// 3B (B41/B42): aviso de vínculo bloqueado + saída explícita para Autônomo.
+  Widget _buildBloqueioCentral() {
+    final sync = MobileSyncService();
+    final l4 = sync.vinculoControladoBloqueado != null;
+    final codigo = l4 ? null : sync.codigoInventarioBloqueado;
+    // Ainda conferindo: sem botões; a gravação fica negada até o resultado.
+    final conferindo = sync.bloqueioLegadoConferindo;
+    return Container(
+      width: double.infinity,
+      color: Colors.red.shade50,
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Icon(Icons.lock, color: Colors.red.shade700, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  (conferindo
+                          ? 'Conferindo compatibilidade'
+                          : l4
+                              ? 'Controlado bloqueado: vínculo salvo não validado'
+                              : 'Controlado bloqueado: atualização necessária') +
+                      (codigo != null ? ' ($codigo)' : ''),
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.red.shade800,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 4),
+          Text(sync.motivoBloqueioLegado ?? '',
+              style: const TextStyle(fontSize: 12)),
+          if (!conferindo)
+          Align(
+            alignment: Alignment.centerRight,
+            child: Wrap(
+              spacing: 8,
+              children: [
+                if (l4 && sync.vinculoBloqueadoPorDono)
+                  // B48: vínculo de outro usuário/sem dono → escolher de novo
+                  TextButton.icon(
+                    onPressed: () async {
+                      await Navigator.of(context).push(MaterialPageRoute(
+                        builder: (_) => const ModoOperacaoScreen(),
+                      ));
+                      if (mounted) setState(() {});
+                    },
+                    icon: const Icon(Icons.swap_horiz, size: 18),
+                    label: const Text('Escolher inventário'),
+                  )
+                else
+                  TextButton.icon(
+                    // L4: revalida o vínculo salvo; L1: confere de novo
+                    onPressed: l4
+                        ? () => MobileSyncService().revalidarVinculoControlado()
+                        : _buscarInventarioAtivo,
+                    icon: const Icon(Icons.refresh, size: 18),
+                    label: const Text('Verificar de novo'),
+                  ),
+                OutlinedButton(
+                  onPressed: _escolherAutonomoExplicito,
+                  child: const Text('Contar sem vínculo (Autônomo)'),
+                ),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// B42: a saída do bloqueio é a transição oficial do serviço.
+  Future<void> _escolherAutonomoExplicito() async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Contar sem vínculo?'),
+        content: const Text(
+          'Este aparelho não pode contar no inventário em andamento até ser '
+          'atualizado.\n\n'
+          'Se continuar, os próximos lançamentos ficarão SEM vínculo com o '
+          'inventário (modo Autônomo) e NÃO entram na contagem central.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancelar'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Contar sem vínculo'),
+          ),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    // B52: a escolha pertence a quem confirmou; troca no meio = no-op
+    final feito = await MobileSyncService().setModoAutonomo(explicito: true);
+    if (!mounted) return;
+    setState(() {});
+    if (feito) {
+      _snack('Modo Autônomo escolhido: lançamentos sem vínculo com inventário.');
+    }
+  }
+
   Widget _buildHeaderInventario() {
     // DEBUG
     debugPrint('=== HEADER DEBUG ===');

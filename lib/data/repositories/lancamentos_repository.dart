@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lego/services/user_service.dart';
 import 'package:lego/data/local/lanc_local.dart';
+import 'package:lego/config/fluxo2_config.dart';
+import 'package:lego/models/sessao_contagem.dart' show SessaoContagem, kDeletePending;
 import 'package:path_provider/path_provider.dart';
 // lib/data/repositories/lancamentos_repository.dart
 import 'dart:async';
@@ -218,15 +220,94 @@ class LancamentosRepository {
   }
 
   // ---------- Stream all sorted ----------
-  Stream<List<LancLocal>> watchAllSorted() async* {
+  /// Sem parâmetros: todos os lançamentos da box (comportamento legado e
+  /// Contagem Simples).
+  /// Com [inventarioId] e [contagemId] (sessão Completa, B23): só o escopo da
+  /// sessão, sem tombstones de exclusão.
+  Stream<List<LancLocal>> watchAllSorted({
+    String? inventarioId,
+    String? contagemId,
+  }) async* {
     final box = await _openBox();
+    final escopado = inventarioId != null && contagemId != null;
+    final inv = inventarioId ?? '';
+    final cont = contagemId ?? '';
     List<LancLocal> _sorted() {
-      final list = box.values.toList();
+      final list = escopado
+          ? box.values
+              .where((l) => SessaoContagem.escopoContem(
+                    lancInventarioId: l.inventarioId,
+                    lancContagemId: l.contagemId,
+                    lancErrorCode: l.errorCode,
+                    inventarioId: inv,
+                    contagemId: cont,
+                  ))
+              .toList()
+          : box.values.toList();
       list.sort((a, b) => b.createdAtLocal.compareTo(a.createdAtLocal));
       return list;
     }
     yield _sorted();
     yield* box.watch().map((_) => _sorted());
+  }
+
+  // ---------- Fluxo 2: fila de sincronização da sessão (B17, B21) ----------
+
+  bool _noEscopo(LancLocal l, String inventarioId, String contagemId) =>
+      (l.inventarioId ?? '') == inventarioId && (l.contagemId ?? '') == contagemId;
+
+  /// B28: com o fluxo 2 ligado, a limpeza (manual ou automática) só remove
+  /// lançamento sincronizado SEM vínculo com inventário/rodada. Lançamentos
+  /// da Contagem Completa ficam no aparelho, qualquer que seja a sessão atual.
+  static bool podeSerLimpo(LancLocal l) {
+    if (l.status != LancStatus.synced) return false;
+    if (!Fluxo2Config.habilitado) return true;
+    return (l.inventarioId ?? '').isEmpty && (l.contagemId ?? '').isEmpty;
+  }
+
+  /// Lançamentos ainda não refletidos no servidor naquele inventário+rodada:
+  /// `status != synced`, incluindo tombstones de exclusão (B17, B21).
+  Future<int> contarNaoSincronizados({
+    required String inventarioId,
+    required String contagemId,
+  }) async {
+    final box = await _openBox();
+    return box.values
+        .where((l) => _noEscopo(l, inventarioId, contagemId) &&
+            l.status != LancStatus.synced)
+        .length;
+  }
+
+  /// Devolve à fila (`pending`) os registros em `error` daquele escopo, para o
+  /// SyncService reenviar (B17). Tombstones não passam por aqui: já estão
+  /// `pending`. Retorna quantos voltaram.
+  Future<int> reenfileirarErros({
+    required String inventarioId,
+    required String contagemId,
+  }) async {
+    final box = await _openBox();
+    final erros = box.values
+        .where((l) => _noEscopo(l, inventarioId, contagemId) &&
+            l.status == LancStatus.error &&
+            l.errorCode != kDeletePending)
+        .toList();
+    for (final l in erros) {
+      await box.put(l.idLocal, l.copyWith(status: LancStatus.pending));
+    }
+    return erros.length;
+  }
+
+  /// Marca o lançamento como exclusão pendente (tombstone): continua no Hive,
+  /// fora da lista e do cache de TAG, contando como não sincronizado, até o
+  /// SyncService apagar o documento remoto (B21, B21-C).
+  Future<void> marcarExclusaoPendente(String idLocal) async {
+    final box = await _openBox();
+    final v = _getByIdLocalSync(box, idLocal);
+    if (v == null) return;
+    await box.put(
+      idLocal,
+      v.copyWith(status: LancStatus.pending, errorCode: kDeletePending),
+    );
   }
 
   // ---------- Update ----------
@@ -295,10 +376,32 @@ class LancamentosRepository {
   }
 
   // ---------- Delete ----------
-  Future<void> delete(String idLocal) async {
+  /// [manterTombstoneSeFalhar] = true (sessão Completa, B21): o lançamento
+  /// vira tombstone ANTES da tentativa remota e só sai do Hive depois que o
+  /// Firestore confirmar. Sem rede, o SyncService conclui a exclusão depois.
+  /// = false: comportamento legado (sai do Hive primeiro).
+  Future<void> delete(String idLocal, {bool manterTombstoneSeFalhar = false}) async {
     final box = await _openBox();
     final current = _getByIdLocalSync(box, idLocal);
     if (current == null) return;
+
+    if (manterTombstoneSeFalhar) {
+      await marcarExclusaoPendente(idLocal);
+      final docId = '${uid}_$idLocal';
+      try {
+        // Offline, o Firestore só completa a Future ao reconectar: limita a
+        // espera e deixa o restante para o SyncService.
+        await FirebaseFirestore.instance
+            .collection('lancamentos')
+            .doc(docId)
+            .delete()
+            .timeout(const Duration(seconds: 8));
+        await box.delete(idLocal);
+      } catch (e) {
+        debugPrint('⚠️ Exclusão remota pendente (tombstone mantido) para $docId: $e');
+      }
+      return;
+    }
 
     // Remove SEMPRE do Hive local primeiro — a remoção visual e a liberação
     // da tag não podem depender da conectividade. Se o Firestore falhar
@@ -335,6 +438,9 @@ class LancamentosRepository {
     final box = await _openBox();
     final v = _getByIdLocalSync(box, idLocal);
     if (v == null) return;
+    // B21: se o lançamento virou tombstone enquanto era enviado, não o marca
+    // como sincronizado; ele segue na fila para a exclusão remota.
+    if (v.errorCode == kDeletePending) return;
     await box.put(
       idLocal,
       v.copyWith(status: LancStatus.synced, remoteId: remoteId, errorCode: null),
@@ -356,13 +462,25 @@ class LancamentosRepository {
     await box.delete(idLocal);
   }
 
-  Future<bool> tagJaExiste(String tag) async {
+  /// Sem escopo: procura na box inteira (legado e Contagem Simples).
+  /// Com [inventarioId] e [contagemId] (sessão Completa, T21): só naquele
+  /// inventário e rodada.
+  Future<bool> tagJaExiste(
+    String tag, {
+    String? inventarioId,
+    String? contagemId,
+  }) async {
     if (tag.isEmpty) return false;
     final box = await _openBox();
-    // Ignora registros marcados para exclusão (compatibilidade com dados
-    // antigos que ficaram com a flag DELETE_PENDING antes da correção do delete).
+    final escopado = inventarioId != null && contagemId != null;
+    final inv = inventarioId ?? '';
+    final cont = contagemId ?? '';
+    // Ignora registros marcados para exclusão (tombstones e dados antigos).
     return box.values.any(
-      (lanc) => lanc.tag == tag && lanc.errorCode != 'DELETE_PENDING',
+      (lanc) =>
+          lanc.tag == tag &&
+          lanc.errorCode != kDeletePending &&
+          (!escopado || _noEscopo(lanc, inv, cont)),
     );
   }
 
@@ -493,11 +611,22 @@ class LancamentosRepository {
           box = await Hive.openBox<LancLocal>(boxName);
         }
 
-        final count = box.length;
-        
-        // 🔧 APAGAR TUDO, SEM EXCEÇÕES
-        await box.clear();
-        
+        int count;
+        if (Fluxo2Config.habilitado) {
+          // Fluxo 2: nunca apaga o que não chegou ao servidor (pending, error
+          // e tombstones) nem lançamento vinculado a inventário/rodada (B28).
+          final sincronizados = box.values
+              .where(podeSerLimpo)
+              .map((l) => l.idLocal)
+              .toList();
+          await box.deleteAll(sincronizados);
+          count = sincronizados.length;
+        } else {
+          count = box.length;
+          // 🔧 APAGAR TUDO, SEM EXCEÇÕES (legado)
+          await box.clear();
+        }
+
         totalDeleted += count;
 
         debugPrint('  ✅ $boxName: $count registros apagados');
@@ -569,7 +698,8 @@ class LancamentosRepository {
             int removed = 0;
 
             for (var record in oldRecords) {
-              if (record.status == LancStatus.synced) {
+              // B28: com o fluxo 2, preserva lançamentos de inventário/rodada
+              if (podeSerLimpo(record)) {
                 await box.delete(record.idLocal);
                 removed++;
               }

@@ -8,6 +8,7 @@ import 'firebase_options.dart';
 
 // ⭐ Telas do Desktop (todas as fases)
 import 'package:lego/ui/desktop/screens/dashboard_desktop_screen.dart';
+import 'package:lego/services/compatibilidade_service.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -82,11 +83,117 @@ class AuthWrapper extends StatelessWidget {
         }
 
         if (snapshot.hasData && snapshot.data != null) {
-          return const DashboardDesktopScreen();
+          // T34 (3B, D11): o dashboard só abre com compatibilidade liberada
+          return _PortaoCompatibilidade(
+            key: ValueKey(snapshot.data!.uid),
+            child: const DashboardDesktopScreen(),
+          );
         }
 
         return const LoginDesktopScreen();
       },
+    );
+  }
+}
+
+/// T34 (3B): confere `versao_minima_desktop` no servidor antes do dashboard.
+/// Documento ausente/inválido, versão abaixo ou falha de leitura = bloqueio.
+class _PortaoCompatibilidade extends StatefulWidget {
+  final Widget child;
+  const _PortaoCompatibilidade({super.key, required this.child});
+
+  @override
+  State<_PortaoCompatibilidade> createState() => _PortaoCompatibilidadeState();
+}
+
+class _PortaoCompatibilidadeState extends State<_PortaoCompatibilidade> {
+  bool _verificando = true;
+  bool _liberado = false;
+  String _motivo = '';
+
+  @override
+  void initState() {
+    super.initState();
+    _verificar();
+  }
+
+  Future<void> _verificar() async {
+    setState(() {
+      _verificando = true;
+      _motivo = '';
+    });
+    var liberado = false;
+    var motivo = '';
+    try {
+      await CompatibilidadeService()
+          .verificarNoServidor(PlataformaCompat.desktop);
+      liberado = true;
+    } on CompatibilidadeException catch (e) {
+      motivo = e.mensagem;
+    } on FirebaseException catch (e) {
+      motivo = e.code == 'unavailable'
+          ? 'Servidor Firestore indisponível ou sem conexão com a internet.'
+          : e.code == 'permission-denied'
+              ? 'Sem permissão para ler a configuração de compatibilidade '
+                  '(regras do Firestore). Detalhe: ${e.message}'
+              : 'Erro ao conferir a compatibilidade (${e.code}): ${e.message}';
+    } catch (e) {
+      motivo = 'Erro ao conferir a compatibilidade: $e';
+    }
+    if (!mounted) return;
+    setState(() {
+      _verificando = false;
+      _liberado = liberado;
+      _motivo = motivo;
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_verificando) {
+      return const Scaffold(
+        body: Center(child: CircularProgressIndicator()),
+      );
+    }
+    if (_liberado) return widget.child;
+    return Scaffold(
+      body: Center(
+        child: Card(
+          elevation: 8,
+          child: Container(
+            constraints: const BoxConstraints(maxWidth: 480),
+            padding: const EdgeInsets.all(32),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.lock, size: 56, color: Colors.red.shade700),
+                const SizedBox(height: 16),
+                Text(
+                  'LEGO Desktop bloqueado',
+                  style: Theme.of(context).textTheme.titleLarge,
+                ),
+                const SizedBox(height: 12),
+                Text(_motivo, textAlign: TextAlign.center),
+                const SizedBox(height: 24),
+                Wrap(
+                  spacing: 12,
+                  children: [
+                    FilledButton.icon(
+                      onPressed: _verificar,
+                      icon: const Icon(Icons.refresh),
+                      label: const Text('Tentar novamente'),
+                    ),
+                    TextButton(
+                      onPressed: () => FirebaseAuth.instance.signOut(),
+                      child: const Text('Sair'),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }

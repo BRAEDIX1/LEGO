@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import '../services/auth_service.dart';
-import 'home_page.dart';
+import 'resolver_tela_inicial.dart';
 import 'package:hive/hive.dart';
 import 'first_sync_screen.dart';
 import 'package:lego/services/fixed_collections_sync.dart';
@@ -136,14 +136,7 @@ class _LoginPageState extends State<LoginPage> {
 
         _iniciarListenerVersao(); // ✅ Inicia listener após registro
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => needsSync
-                ? const FirstSyncScreen()
-                : const HomePage(),
-          ),
-        );
+        await _navegarAposLogin(needsSync);
       } else {
         final userCredential = await _authService.signInWithEmailAndPassword(
             email: email, password: pass);
@@ -163,14 +156,7 @@ class _LoginPageState extends State<LoginPage> {
 
           _iniciarListenerVersao(); // ✅ Inicia listener após login
 
-          Navigator.pushReplacement(
-            context,
-            MaterialPageRoute(
-              builder: (context) => needsSync
-                  ? const FirstSyncScreen()
-                  : const HomePage(),
-            ),
-          );
+          await _navegarAposLogin(needsSync);
         }
       }
     } on FirebaseAuthException catch (e) {
@@ -251,14 +237,7 @@ class _LoginPageState extends State<LoginPage> {
 
       _iniciarListenerVersao(); // ✅ Inicia listener após login com Google
 
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (context) => needsSync
-              ? const FirstSyncScreen()
-              : const HomePage(),
-        ),
-      );
+      await _navegarAposLogin(needsSync);
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
       final msg = _translateAuthError(e);
@@ -271,6 +250,18 @@ class _LoginPageState extends State<LoginPage> {
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
+  }
+
+  /// B18: após cadastro, login por e-mail ou Google, a tela seguinte sai da
+  /// regra única [resolverTelaInicial] (ou do FirstSyncScreen, que também a usa).
+  Future<void> _navegarAposLogin(bool needsSync) async {
+    final Widget destino =
+        needsSync ? const FirstSyncScreen() : await resolverTelaInicial();
+    if (!mounted) return;
+    Navigator.pushReplacement(
+      context,
+      MaterialPageRoute(builder: (context) => destino),
+    );
   }
 
   /// Verifica se precisa fazer sincronização inicial

@@ -80,7 +80,15 @@ class SyncService {
           debugPrint('[SYNC] Falha pendente ${lanc.idLocal}: $e');
           debugPrint('$st');
           final repo = LancamentosRepository(uid: uid);
-          await repo.markError(lanc.idLocal, e.toString());
+          if (lanc.errorCode == 'DELETE_PENDING') {
+            // B21-C: falha ao apagar NÃO pode virar markError — isso trocaria
+            // a marca DELETE_PENDING pelo texto do erro e, num reenvio, o
+            // lançamento excluído seria regravado no Firestore. O tombstone
+            // continua pendente para a próxima tentativa.
+            await repo.marcarExclusaoPendente(lanc.idLocal);
+          } else {
+            await repo.markError(lanc.idLocal, e.toString());
+          }
         }
       }
 

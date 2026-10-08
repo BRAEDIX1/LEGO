@@ -7,6 +7,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
 import 'dart:convert';
 
+import 'package:lego/services/compatibilidade.dart' show versaoMaisNova;
+
 class ReleaseInfo {
   final String versao;
   final String descricao;
@@ -95,19 +97,6 @@ class UpdateService {
   }
 
   /// Compara duas versões semânticas. Retorna true se [nova] > [atual].
-  bool _isNewer(String nova, String atual) {
-    final n = _partes(nova);
-    final a = _partes(atual);
-    for (int i = 0; i < 3; i++) {
-      if (n[i] > a[i]) return true;
-      if (n[i] < a[i]) return false;
-    }
-    return false;
-  }
-
-  List<int> _partes(String v) {
-    final partes = v.split('.').map((p) => int.tryParse(p) ?? 0).toList();
-    while (partes.length < 3) partes.add(0);
-    return partes;
-  }
+  /// 3B (T32): a lógica mora em compatibilidade.dart; comportamento idêntico.
+  bool _isNewer(String nova, String atual) => versaoMaisNova(nova, atual);
 }
