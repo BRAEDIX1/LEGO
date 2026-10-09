@@ -41,7 +41,10 @@ class HiveBoxes {
   static Future<void> closeUserLancamentos(String uid) async {
     final name = 'lancamentos_$uid';
     if (Hive.isBoxOpen(name)) {
-      await Hive.box(name).close();
+      // B80: a caixa foi aberta como Box<LancLocal>; buscá-la sem o tipo
+      // (Hive.box(name)) lança HiveError "already open and of type
+      // Box<LancLocal>" e o logout não fechava a caixa.
+      await Hive.box<LancLocal>(name).close();
     }
   }
 }

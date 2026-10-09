@@ -1,243 +1,509 @@
 // test/comparativo_test.dart
-// Entrega 1: comparativo C1 × C2 (funções puras).
+// Comparativo C1 × C2 (funções puras) — L3: três consolidados.
+//   MATERIAL → quantidade (código + lote + local + prateleira)
+//   GÁS      → só cheios  (código + lote + local)
+//   CILINDRO → cheios + vazios (produto/descrição do gás + local)
+// Os testes usam a regra de PRODUÇÃO (sem classificador injetado).
 // Rodar com: flutter test test/comparativo_test.dart
 import 'package:flutter_test/flutter_test.dart';
+import 'package:lego/models/sessao_contagem.dart';
+import 'package:lego/services/c3.dart';
 import 'package:lego/services/comparativo.dart';
 
-LancResumo tag(String t, {String cod = 'OX10', double cheio = 1, double vazio = 0}) =>
-    LancResumo(tag: t, codigo: cod, quantidade: 1, cheio: cheio, vazio: vazio);
+LancResumo gas(String cod,
+        {double cheio = 0,
+        double vazio = 0,
+        String lote = 'L1',
+        String local = 'A',
+        String desc = 'OXIGENIO CIL 10M3'}) =>
+    LancResumo(
+        codigo: cod,
+        lote: lote,
+        descricao: desc,
+        cheio: cheio,
+        vazio: vazio,
+        quantidade: cheio + vazio,
+        localId: local,
+        localNome: 'Área $local',
+        origem: origemGases);
 
-LancResumo mat(String cod, double qtd, {String? lote, double cheio = 0, double vazio = 0}) =>
-    LancResumo(codigo: cod, lote: lote, quantidade: qtd, cheio: cheio, vazio: vazio);
+LancResumo mat(String cod, double qtd,
+        {String? lote, String local = 'A', String prat = 'P1'}) =>
+    LancResumo(
+        codigo: cod,
+        lote: lote,
+        quantidade: qtd,
+        localId: local,
+        localNome: 'Área $local',
+        prateleira: prat,
+        origem: origemMateriais);
 
-LinhaComparativo linha(List<LinhaComparativo> ls, String chave) =>
-    ls.firstWhere((l) => l.chave == chave);
+List<LinhaComparativo> cmp(List<LancResumo> a, List<LancResumo> b) =>
+    compararC1C2(a, b);
+
+LinhaComparativo de(List<LinhaComparativo> ls, Natureza n) =>
+    ls.singleWhere((l) => l.natureza == n);
 
 void main() {
-  group('LancResumo.deMapa', () {
-    test('com tag → chave TAG', () {
-      final l = LancResumo.deMapa({'tag': ' 000123456 ', 'codigo': 'OX10'})!;
-      expect(l.chave, 'TAG:000123456');
-      expect(l.tipo, TipoChave.tag);
+  group('Obrigatórios da orientação', () {
+    test('1. material usa quantidade e não cheio/vazio', () {
+      final l = de(
+          cmp([mat('M1', 5)], [mat('M1', 5)]), Natureza.material);
+      expect(l.resultado, ResultadoLinha.encerrada);
+      expect(l.c1!.quantidade, 5);
+      expect(l.c1!.cheio, 0);
+      expect(l.c1!.vazio, 0);
+      final d = de(cmp([mat('M1', 5)], [mat('M1', 4)]), Natureza.material);
+      expect(d.motivo, MotivoAnalise.divergente);
     });
-    test('tag vazia → chave Material + Lote', () {
-      final l = LancResumo.deMapa(
-          {'tag': '', 'codigo': 'AR20', 'lote': 'L1', 'quantidade': 3})!;
-      expect(l.chave, 'MAT:AR20|L1');
-      expect(l.quantidade, 3);
-    });
-    test('sem lote → lote vazio na chave', () {
-      expect(LancResumo.deMapa({'codigo': 'AR20'})!.chave, 'MAT:AR20|');
-    });
-    test('sem tag e sem código → ignorado', () {
-      expect(LancResumo.deMapa({'quantidade': 5}), isNull);
-    });
-    test('quantidade como texto é lida', () {
-      expect(LancResumo.deMapa({'codigo': 'X', 'quantidade': '2.5'})!.quantidade,
-          2.5);
-    });
-  });
 
-  group('compararC1C2: TAG', () {
-    test('mesma tag nas duas → encerrada', () {
-      final r = compararC1C2([tag('1')], [tag('1')]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
-    });
-    test('tag só em C1 → em análise (soC1)', () {
-      final r = compararC1C2([tag('1')], []);
-      expect(r.single.motivo, MotivoAnalise.soC1);
-    });
-    test('tag só em C2 → em análise (soC2)', () {
-      final r = compararC1C2([], [tag('2')]);
-      expect(r.single.motivo, MotivoAnalise.soC2);
-    });
-    test('mesma tag cheio × vazio → divergente', () {
-      final r = compararC1C2([tag('1')], [tag('1', cheio: 0, vazio: 1)]);
-      expect(r.single.motivo, MotivoAnalise.divergente);
-    });
-    test('tag lida duas vezes na mesma rodada conta como um cilindro', () {
-      final r = compararC1C2([tag('1'), tag('1')], [tag('1')]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
-      expect(r.single.c1!.ocorrencias, 2);
-    });
-  });
-
-  group('compararC1C2: Material + Lote', () {
-    test('soma de vários lançamentos igual nas duas → encerrada', () {
-      final r = compararC1C2(
-          [mat('AR20', 3, lote: 'L1'), mat('AR20', 2, lote: 'L1')],
-          [mat('AR20', 5, lote: 'L1')]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
-      expect(r.single.c1!.quantidade, 5);
-    });
-    test('quantidades diferentes → divergente', () {
-      final r = compararC1C2([mat('AR20', 5)], [mat('AR20', 4)]);
-      expect(r.single.motivo, MotivoAnalise.divergente);
-    });
-    test('mesmo material, lotes diferentes → duas linhas', () {
-      final r = compararC1C2([mat('AR20', 1, lote: 'A')], [mat('AR20', 1, lote: 'B')]);
+    test('2. material preserva prateleira e local', () {
+      final r = cmp([mat('M1', 5, prat: 'P1'), mat('M1', 2, prat: 'P2')],
+          [mat('M1', 5, prat: 'P1'), mat('M1', 3, prat: 'P2')]);
       expect(r.length, 2);
-      expect(linha(r, 'MAT:AR20|A').motivo, MotivoAnalise.soC1);
-      expect(linha(r, 'MAT:AR20|B').motivo, MotivoAnalise.soC2);
+      final p2 = r.singleWhere((l) => l.prateleira == 'P2');
+      expect(p2.motivo, MotivoAnalise.divergente);
+      expect(p2.localNome, 'Área A');
+      expect(r.singleWhere((l) => l.prateleira == 'P1').resultado,
+          ResultadoLinha.encerrada);
     });
-    test('diferença abaixo de 0,0001 → encerrada', () {
-      final r = compararC1C2([mat('X', 1.00001)], [mat('X', 1.0)]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
+
+    test('3. 8+5 × 7+6: cilindro = consenso 13 × 13', () {
+      final r = cmp([gas('G1', cheio: 8, vazio: 5)],
+          [gas('G1', cheio: 7, vazio: 6)]);
+      final cil = de(r, Natureza.cilindro);
+      expect(cil.c1!.quantidade, 13);
+      expect(cil.c2!.quantidade, 13);
+      expect(cil.resultado, ResultadoLinha.encerrada);
+    });
+
+    test('4. mesmo caso: gás = divergência 8 × 7', () {
+      final r = cmp([gas('G1', cheio: 8, vazio: 5)],
+          [gas('G1', cheio: 7, vazio: 6)]);
+      final g = de(r, Natureza.gas);
+      expect(g.c1!.quantidade, 8);
+      expect(g.c2!.quantidade, 7);
+      expect(g.motivo, MotivoAnalise.divergente);
+    });
+
+    test('5. vazio não entra no consolidado de gás', () {
+      final r = cmp([gas('G1', cheio: 3, vazio: 10)],
+          [gas('G1', cheio: 3, vazio: 0)]);
+      final g = de(r, Natureza.gas);
+      expect(g.c1!.quantidade, 3);
+      expect(g.resultado, ResultadoLinha.encerrada);
+      // ...mas o físico diverge (13 × 3).
+      expect(de(r, Natureza.cilindro).motivo, MotivoAnalise.divergente);
+    });
+
+    test('6. cheio e vazio entram juntos no consolidado de cilindros', () {
+      final r = cmp([gas('G1', cheio: 2, vazio: 4)], [gas('G1', vazio: 6)]);
+      final cil = de(r, Natureza.cilindro);
+      expect(cil.c1!.quantidade, 6);
+      expect(cil.c2!.quantidade, 6);
+      expect(cil.resultado, ResultadoLinha.encerrada);
+      expect(cil.c1!.cheio, 2);
+      expect(cil.c1!.vazio, 4);
+    });
+
+    test('7. cilindro do mesmo produto em vários lançamentos consolida', () {
+      final r = cmp([gas('OXI', cheio: 5), gas('OXI', vazio: 5)],
+          [gas('OXI', cheio: 2, vazio: 8)]);
+      final cil = r.where((l) => l.natureza == Natureza.cilindro).toList();
+      expect(cil.length, 1);
+      expect(cil.single.c1!.quantidade, 10);
+      expect(cil.single.resultado, ResultadoLinha.encerrada);
+      expect(cil.single.descricao, 'OXIGENIO CIL 10M3'); // a do gás
+    });
+
+    test('8. produtos de gás diferentes ficam em cilindros diferentes '
+        '(decisão: descrição do gás, sem família física comum)', () {
+      final r = cmp([
+        gas('OXI', cheio: 5, desc: 'OXIGENIO CIL 10M3'),
+        gas('ARG', cheio: 5, desc: 'ARGONIO CIL 10M3'),
+      ], [
+        gas('OXI', cheio: 5, desc: 'OXIGENIO CIL 10M3'),
+        gas('ARG', cheio: 5, desc: 'ARGONIO CIL 10M3'),
+      ]);
+      final cil = r.where((l) => l.natureza == Natureza.cilindro).toList();
+      expect(cil.length, 2);
+      expect(cil.map((l) => l.codigo).toSet(), {'OXI', 'ARG'});
+    });
+
+    test('9. nenhuma correspondência é inventada entre produtos', () {
+      expect(tipoCilindroDaDescricao('OXIGENIO CIL 10M3'), isNull);
+      final cil = de(cmp([gas('X1', cheio: 2, desc: 'GAS ESPECIAL')], []),
+          Natureza.cilindro);
+      expect(cil.cilindroPorProduto, isTrue);
+      expect(cil.codigo, 'X1');
+      expect(cil.identificacao, 'X1');
+      expect(cil.descricao, 'GAS ESPECIAL');
+    });
+
+    test('10. C3 material: só quantidade', () {
+      expect(campoC3Para('material'), CampoC3.quantidade);
+      final t = resultadoC3('material', quantidade: 4);
+      expect(t.quantidade, 4);
+      expect(t.cheio, 0);
+      expect(t.vazio, 0);
+    });
+
+    test('11. C3 cilindro: cheio + vazio digitados, métrica = soma', () {
+      expect(campoC3Para('cilindro'), CampoC3.cheioVazio);
+      final t = resultadoC3('cilindro', cheio: 8, vazio: 5);
+      expect(t.quantidade, 13);
+      expect(t.cheio, 8);
+      expect(t.vazio, 5);
+    });
+
+    test('12. C3 gás: cheio + vazio digitados, métrica = só cheios', () {
+      expect(campoC3Para('gas'), CampoC3.cheioVazio);
+      final t = resultadoC3('gas', cheio: 7, vazio: 3, volumeUnitario: 10);
+      expect(t.quantidade, 7);
+      expect(t.cheio, 7);
+      expect(t.vazio, 3);
+      expect(t.volume, 70);
+    });
+
+    test('C3 0 e 0 = não encontrado (só a C3 aceita)', () {
+      expect(resultadoC3('gas').naoEncontrado, isTrue);
+      expect(resultadoC3('cilindro').naoEncontrado, isTrue);
+      expect(resultadoC3('material').naoEncontrado, isTrue);
+      expect(resultadoC3('gas', vazio: 1).naoEncontrado, isFalse);
     });
   });
 
-  group('compararC1C2: mistura e ordem', () {
-    test('em análise vêm antes das encerradas', () {
-      final r = compararC1C2(
-          [tag('1', cod: 'A'), mat('B', 1)], [tag('1', cod: 'A'), mat('B', 2)]);
-      expect(r.first.emAnalise, isTrue);
-      expect(r.last.emAnalise, isFalse);
+  group('Chaves do Djalma (09/10)', () {
+    test('material = código + prateleira: locais/lotes diferentes somam', () {
+      final r = cmp([
+        mat('M1', 2, prat: 'P1', local: 'A', lote: 'X'),
+        mat('M1', 3, prat: 'P1', local: 'B', lote: 'Y'),
+      ], [
+        mat('M1', 5, prat: 'P1', local: 'A'),
+      ]);
+      final m = de(r, Natureza.material);
+      expect(m.chave, 'MAT:M1|P1');
+      expect(m.c1!.quantidade, 5);
+      expect(m.resultado, ResultadoLinha.encerrada);
+      expect(m.lote, isNull);
     });
-    test('C1 e C2 vazias → nenhuma linha', () {
-      expect(compararC1C2([], []), isEmpty);
+    test('gás = código + lote + localização; guarda volume contado', () {
+      LancResumo g(double cheio, double? vol) => LancResumo(
+          codigo: 'G1', lote: 'L1', cheio: cheio, localId: 'A',
+          localNome: 'Área A', origem: origemGases, volume: vol);
+      final r = cmp([g(3, 10), g(2, 10)], [g(5, 10)]);
+      final linha = de(r, Natureza.gas);
+      expect(linha.chave, 'GAS:G1|L1|A');
+      expect(linha.c1!.quantidade, 5);
+      expect(linha.c1!.volume, 50);
+      expect(linha.volumeUnitario, 10);
+      expect(LinhaComparativo.deMapa(linha.toMap()).volumeUnitario, 10);
+    });
+    test('gás sem volume no cadastro: volume vazio', () {
+      final r = cmp([gas('G1', cheio: 2)], []);
+      expect(de(r, Natureza.gas).c1!.volume, isNull);
+    });
+    test('cilindro = código + localização (sem lote)', () {
+      final r = cmp([gas('G1', cheio: 1, lote: 'A'), gas('G1', vazio: 1, lote: 'B')],
+          [gas('G1', cheio: 2, lote: 'A')]);
+      final c = de(r, Natureza.cilindro);
+      expect(c.chave, 'CIL:G1|A');
+      expect(c.lote, isNull);
+      expect(c.resultado, ResultadoLinha.encerrada);
     });
   });
 
-  group('ResumoComparativo', () {
-    test('conta por resultado e motivo', () {
-      final r = ResumoComparativo.de(compararC1C2(
-        [tag('1'), tag('2'), mat('X', 1)],
-        [tag('1'), tag('3'), mat('X', 2)],
-      ));
-      expect(r.total, 4);
-      expect(r.encerradas, 1);
-      expect(r.emAnalise, 3);
-      expect(r.soC1, 1);
-      expect(r.soC2, 1);
-      expect(r.divergentes, 1);
+  group('Um lançamento de gás alimenta gás e cilindro', () {
+    test('gera duas linhas; material gera uma', () {
+      expect(cmp([gas('G1', cheio: 1)], []).length, 2);
+      expect(cmp([mat('M1', 1)], []).length, 1);
+    });
+    test('gás por lote: lotes diferentes, linhas diferentes', () {
+      final r = cmp([gas('G1', cheio: 2, lote: 'A')],
+          [gas('G1', cheio: 2, lote: 'B')]);
+      final g = r.where((l) => l.natureza == Natureza.gas).toList();
+      expect(g.length, 2);
+      // O cilindro físico não tem lote: 2 × 2 no mesmo local.
+      expect(de(r, Natureza.cilindro).resultado, ResultadoLinha.encerrada);
+    });
+    test('localização separa todos os consolidados', () {
+      final r = cmp([gas('G1', cheio: 2, local: 'A')],
+          [gas('G1', cheio: 2, local: 'B')]);
+      expect(r.length, 4);
+      expect(r.every((l) => l.emAnalise), isTrue);
     });
   });
 
-  group('persistência', () {
-    test('toMap → deMapa preserva a linha', () {
-      final orig = compararC1C2([mat('AR/20', 2, lote: 'L1')], []).single;
-      final volta = LinhaComparativo.deMapa(orig.toMap());
-      expect(volta.chave, orig.chave);
-      expect(volta.motivo, MotivoAnalise.soC1);
-      expect(volta.c1!.quantidade, 2);
-      expect(volta.c2, isNull);
+  group('Classificação material × gás', () {
+    test('origem do cadastro manda', () {
+      const l = LancResumo(codigo: 'X', quantidade: 3, origem: origemGases);
+      expect(l.ehGas, isTrue);
     });
-    test('id do documento não contém barra', () {
-      expect(idDocumento('MAT:AR/20|L/1').contains('/'), isFalse);
+    test('sem cadastro: cheio/vazio = gás; só quantidade = material', () {
+      expect(const LancResumo(codigo: 'X', cheio: 1).ehGas, isTrue);
+      expect(const LancResumo(codigo: 'X', quantidade: 1).ehGas, isFalse);
+    });
+    test('deMapa lê local, prateleira e descrição', () {
+      final l = LancResumo.deMapa({
+        'codigo': 'M1',
+        'prateleira': 'p3',
+        'localizacaoId': 'ENCH',
+        'localizacaoNome': 'Enchimento',
+        'descricao': 'ABC',
+      })!;
+      expect(l.prateleira, 'P3');
+      expect(l.localNome, 'Enchimento');
+      expect(l.descricao, 'ABC');
+    });
+    test('comOrigem completa a descrição pelo cadastro', () {
+      const l = LancResumo(codigo: 'G', cheio: 1);
+      final c = l.comOrigem(origemGases, descricaoCadastro: 'OXIGENIO CIL 10M3');
+      expect(c.descricao, 'OXIGENIO CIL 10M3');
+      expect(c.origem, origemGases);
     });
   });
 
-  group('C3 e resultado final (Entrega 2)', () {
-    LinhaComparativo comC3(LinhaComparativo l, TotaisRodada? c3) =>
-        LinhaComparativo.deMapa({...l.toMap(), 'c3': c3?.toMap(), 'c3_quem': 'Ana'});
+  group('Escolha da C3 (um consolidado)', () {
+    test('linha fora da C3: sem valor final, não conta como pendente', () {
+      final base = de(cmp([mat('M1', 1)], [mat('M1', 2)]), Natureza.material);
+      final fora = LinhaComparativo.deMapa({...base.toMap(), 'c3_fora': true});
+      expect(fora.naC3, isFalse);
+      expect(fora.pendenteAtual, isFalse);
+      expect(fora.semC3, isTrue);
+      expect(fora.valorFinal, isNull);
+      expect(fora.origemFinal, 'sem C3 (não selecionado)');
+      expect(ResumoC3.de([fora]).total, 0);
+    });
+    test('resumo conta divergências por natureza', () {
+      final r = ResumoComparativo.de(cmp(
+          [gas('G1', cheio: 8, vazio: 5), mat('M1', 1)],
+          [gas('G1', cheio: 7, vazio: 6), mat('M1', 2)]));
+      expect(r.divergenciasPor[Natureza.gas], 1);
+      expect(r.divergenciasPor[Natureza.cilindro], 0);
+      expect(r.divergenciasPor[Natureza.material], 1);
+    });
+  });
 
-    test('encerrada: final = C1 (consenso)', () {
-      final l = compararC1C2([mat('X', 3)], [mat('X', 3)]).single;
-      expect(l.valorFinal!.quantidade, 3);
-      expect(l.origemFinal, 'C1 = C2');
-    });
-    test('em análise sem C3: final pendente', () {
-      final l = compararC1C2([mat('X', 3)], [mat('X', 4)]).single;
-      expect(l.valorFinal, isNull);
-      expect(l.origemFinal, 'pendente na C3');
-    });
-    test('em análise com C3: final = C3', () {
-      final base = compararC1C2([mat('X', 3)], [mat('X', 4)]).single;
-      final l = comC3(base, const TotaisRodada(quantidade: 4, ocorrencias: 1));
-      expect(l.valorFinal!.quantidade, 4);
-      expect(l.origemFinal, 'C3');
-      expect(l.c3Quem, 'Ana');
-      expect(l.contadaNaC3, isTrue);
-    });
-    test('tag não encontrada na C3 → final zero', () {
-      final base = compararC1C2([tag('9')], []).single;
-      final l = comC3(base, const TotaisRodada(ocorrencias: 1));
-      expect(l.valorFinal!.quantidade, 0);
-    });
-    test('ResumoC3 conta contadas e pendentes', () {
-      final ls = compararC1C2([mat('A', 1), mat('B', 1), mat('C', 1)],
-          [mat('A', 2), mat('B', 2), mat('C', 1)]);
-      final a = ls.firstWhere((l) => l.codigo == 'A');
-      final atual = [
-        for (final l in ls)
-          l.codigo == 'A' ? comC3(a, const TotaisRodada(quantidade: 2)) : l
+  group('B69: fechamento auditável por consolidado', () {
+    List<LinhaComparativo> cenario() {
+      // gás diverge (8×7), material diverge (1×2), cilindro consenso (13×13)
+      final r = cmp([gas('G1', cheio: 8, vazio: 5), mat('M1', 1)],
+          [gas('G1', cheio: 7, vazio: 6), mat('M1', 2)]);
+      // Analista escolheu GASES: material fica fora; gás recontado.
+      return [
+        for (final l in r)
+          LinhaComparativo.deMapa({
+            ...l.toMap(),
+            if (l.emAnalise) 'c3_fora': l.natureza != Natureza.gas,
+            if (l.emAnalise && l.natureza == Natureza.gas)
+              'c3': resultadoC3('gas', cheio: 8).toMap(),
+          })
       ];
-      final r = ResumoC3.de(atual);
-      expect(r.total, 2);
-      expect(r.contadas, 1);
-      expect(r.pendentes, 1);
+    }
+
+    test('escolhido: recontado e resolvido', () {
+      final g = resumoPorNatureza(cenario(), Natureza.gas)[Natureza.gas]!;
+      expect(g.selecionada, isTrue);
+      expect(g.divergencias, 1);
+      expect(g.recontadas, 1);
+      expect(g.resolvidas, 1);
+      expect(g.texto, contains('1 recontada'));
     });
-    test('CSV: cabeçalho, separador ; e decimal com vírgula', () {
-      final csv = resultadoCsv(compararC1C2([mat('X', 1.5)], [mat('X', 1.5)]));
-      final linhas = csv.trim().split('\n');
-      expect(linhas.first.startsWith('tipo;tag;codigo;lote'), isTrue);
-      expect(linhas[1].contains('1,5'), isTrue);
-      expect(linhas[1].contains(';C1 = C2;resolvida;'), isTrue);
+    test('não escolhido: "C3 não selecionada", nunca recontado', () {
+      final m =
+          resumoPorNatureza(cenario(), Natureza.gas)[Natureza.material]!;
+      expect(m.selecionada, isFalse);
+      expect(m.divergencias, 1);
+      expect(m.recontadas, 0);
+      expect(m.resolvidas, 0);
+      expect(m.semC3, 1);
+      expect(m.texto, endsWith('fora da C3 (informativo)'));
+    });
+    test('consolidado sem divergência aparece com zero', () {
+      final c =
+          resumoPorNatureza(cenario(), Natureza.gas)[Natureza.cilindro]!;
+      expect(c.divergencias, 0);
+      expect(c.texto, 'Cilindros: 0 divergência(s)');
+    });
+    test('CSV registra a C3 selecionada e "sem_c3"', () {
+      final csv = resultadoCsv(cenario(), c3Selecionada: Natureza.gas);
+      final ls = csv.trim().split('\n');
+      expect(ls.first.endsWith(';c3_selecionada'), isTrue);
+      expect(ls.skip(1).every((x) => x.endsWith(';gas')), isTrue);
+      final mat = ls.firstWhere((x) => x.startsWith('material;'));
+      expect(mat.contains(';sem C3 (não selecionado);sem_c3;'), isTrue);
     });
   });
 
-  group('A1 / A3 / não encontrado (Entrega 3)', () {
-    test('A3: mesma TAG cheio e vazio na C1 → conflito, vai para a C3', () {
-      final r = compararC1C2(
-          [tag('7'), tag('7', cheio: 0, vazio: 1)], [tag('7')]);
-      expect(r.single.motivo, MotivoAnalise.conflito);
-      expect(r.single.c1!.conflito, isTrue);
+  group('Persistência, C3 e planilha', () {
+    test('toMap → deMapa preserva natureza, tipo, prateleira', () {
+      final r = cmp([gas('G1', cheio: 1), mat('M1', 2, prat: 'P9')], []);
+      for (final l in r) {
+        final v = LinhaComparativo.deMapa(l.toMap());
+        expect(v.natureza, l.natureza);
+        expect(v.tipoCilindro, l.tipoCilindro);
+        expect(v.prateleira, l.prateleira);
+        expect(v.chave, l.chave);
+      }
     });
-    test('A3: duplicata idêntica não é conflito', () {
-      final r = compararC1C2([tag('7'), tag('7')], [tag('7')]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
-    });
-    test('A3: conflito em material (sem TAG) não existe: soma normal', () {
-      final r = compararC1C2(
-          [mat('X', 1, cheio: 1), mat('X', 1, vazio: 1)],
-          [mat('X', 2, cheio: 1, vazio: 1)]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
-    });
-    test('A1: divergente sem C3 é pendente; com C3 é resolvida', () {
-      final base = compararC1C2([mat('X', 1)], [mat('X', 2)]).single;
-      expect(base.pendenteAtual, isTrue);
-      expect(base.resolvida, isFalse);
-      final com = LinhaComparativo.deMapa(
-          {...base.toMap(), 'c3': const TotaisRodada(quantidade: 2).toMap()});
-      expect(com.emAnalise, isTrue); // divergência original preservada
-      expect(com.pendenteAtual, isFalse);
-      expect(com.resolvida, isTrue);
-    });
-    test('não encontrado na C3: final zero e origem explícita', () {
-      final base = compararC1C2([tag('1')], []).single;
+    test('C3 soberana; não encontrado preserva evidência', () {
+      final base = de(cmp([mat('M1', 2)], []), Natureza.material);
       final l = LinhaComparativo.deMapa({
         ...base.toMap(),
         'c3': const TotaisRodada(ocorrencias: 1, naoEncontrado: true).toMap()
       });
       expect(l.valorFinal!.quantidade, 0);
       expect(l.origemFinal, 'C3: não encontrado');
-      expect(l.c1!.quantidade, 1); // evidência da C1 preservada
+      expect(l.c1!.quantidade, 2);
     });
-    test('conflitos aparecem no resumo', () {
-      final r = ResumoComparativo.de(
-          compararC1C2([tag('7'), tag('7', cheio: 0, vazio: 1)], []));
-      expect(r.conflitos, 1);
+    test('consenso: final = C1', () {
+      final l = de(cmp([mat('M1', 3)], [mat('M1', 3)]), Natureza.material);
+      expect(l.valorFinal!.quantidade, 3);
+      expect(l.origemFinal, 'C1 = C2');
+    });
+    test('id do documento não contém barra', () {
+      expect(idDocumento('MAT:AR/20|L/1|X|P').contains('/'), isFalse);
+    });
+    test('CSV: natureza e local primeiro; decimal com vírgula', () {
+      final csv = resultadoCsv(cmp([mat('M1', 1.5)], [mat('M1', 1.5)]));
+      final ls = csv.trim().split('\n');
+      expect(ls.first.startsWith('natureza;local;item;lote;prateleira'), isTrue);
+      expect(ls[1].startsWith('material;Área A;M1;'), isTrue);
+      expect(ls[1].contains('1,5'), isTrue);
+      expect(ls[1].contains(';C1 = C2;resolvida;'), isTrue);
     });
   });
 
-  group('B63: mesma TAG com códigos diferentes', () {
-    test('C1 código A × C2 código B → conflito (C3)', () {
-      final r = compararC1C2([tag('5', cod: 'A')], [tag('5', cod: 'B')]);
-      expect(r.single.motivo, MotivoAnalise.conflito);
+  group('L4: tipo do inventário', () {
+    test('Materiais aceita só materiais', () {
+      expect(SessaoContagem.origemPermitida('material', 'materiais'), isTrue);
+      expect(SessaoContagem.origemPermitida('material', 'gases'), isFalse);
+      expect(SessaoContagem.origemPermitida('material', null), isFalse);
     });
-    test('na mesma rodada, dois códigos para a mesma TAG → conflito', () {
-      final r = compararC1C2(
-          [tag('5', cod: 'A'), tag('5', cod: 'B')], [tag('5', cod: 'A')]);
-      expect(r.single.motivo, MotivoAnalise.conflito);
-      expect(r.single.c1!.conflito, isTrue);
+    test('Cilindros e Gases aceitam só gases', () {
+      for (final n in ['cilindro', 'gas']) {
+        expect(SessaoContagem.origemPermitida(n, 'gases'), isTrue);
+        expect(SessaoContagem.origemPermitida(n, 'materiais'), isFalse);
+      }
     });
-    test('mesmo código nas duas → segue a regra normal (consenso)', () {
-      final r = compararC1C2([tag('5', cod: 'A')], [tag('5', cod: 'A')]);
-      expect(r.single.resultado, ResultadoLinha.encerrada);
+    test('sem tipo (Simples ou inventário antigo) aceita tudo', () {
+      expect(SessaoContagem.origemPermitida(null, 'gases'), isTrue);
+      expect(SessaoContagem.origemPermitida(null, 'materiais'), isTrue);
     });
-    test('códigos persistem no toMap/deMapa', () {
-      final l = compararC1C2([tag('5', cod: 'A')], []).single;
-      expect(LinhaComparativo.deMapa(l.toMap()).c1!.codigos, {'A'});
+    test('o tipo sobrevive à sessão salva no aparelho', () {
+      final s = SessaoContagem.completa(
+        usuarioUid: 'u1',
+        inventarioId: 'inv1',
+        numero: 2,
+        codigo: 'X_002',
+        rodada: 'contagem_1',
+        statusRodada: null,
+        statusIndividual: null,
+        natureza: 'gas',
+      );
+      final volta = SessaoContagem.fromJson(s.toJson())!;
+      expect(volta.natureza, 'gas');
+      expect(volta.aceitaOrigem('materiais'), isFalse);
+      expect(volta.copyWith(statusIndividual: 'x').natureza, 'gas');
+    });
+    test('Natureza.name casa com o valor gravado no inventário', () {
+      expect(NaturezaRotulo.deNome('material'), Natureza.material);
+      expect(NaturezaRotulo.deNome('cilindro'), Natureza.cilindro);
+      expect(NaturezaRotulo.deNome('gas'), Natureza.gas);
+      expect(NaturezaRotulo.deNome(null), isNull);
+    });
+  });
+
+  group('L5: Gases/Cilindros geram os dois; C3 segue o tipo', () {
+    test('consolidados gerados por tipo', () {
+      expect(consolidadosDoTipo(Natureza.material), {Natureza.material});
+      expect(consolidadosDoTipo(Natureza.gas),
+          {Natureza.gas, Natureza.cilindro});
+      expect(consolidadosDoTipo(Natureza.cilindro),
+          {Natureza.gas, Natureza.cilindro});
+      expect(consolidadosDoTipo(null), Natureza.values.toSet());
+    });
+    test('inventário de Gases: 8+5 × 7+4 → só o gás vai para a C3', () {
+      final r = cmp([gas('G1', cheio: 8, vazio: 5)],
+          [gas('G1', cheio: 7, vazio: 4)]);
+      expect(de(r, Natureza.cilindro).motivo, MotivoAnalise.divergente); // 13×11
+      expect(de(r, Natureza.gas).motivo, MotivoAnalise.divergente); // 8×7
+      expect(divergenciasParaC3(r, Natureza.gas), 1);
+      expect(divergenciasParaC3(r, Natureza.cilindro), 1);
+    });
+    test('inventário de Gases com só o cilindro divergindo: C3 não necessária',
+        () {
+      final r = cmp([gas('G1', cheio: 8, vazio: 5)],
+          [gas('G1', cheio: 8, vazio: 4)]);
+      expect(divergenciasParaC3(r, Natureza.gas), 0);
+      expect(divergenciasParaC3(r, Natureza.cilindro), 1);
+    });
+    test('B70: lançamento só de vazios não cria linha de gás com zero', () {
+      final r = cmp([gas('G1', vazio: 1)], []);
+      expect(r.where((l) => l.natureza == Natureza.gas), isEmpty);
+      expect(de(r, Natureza.cilindro).c1!.quantidade, 1);
+    });
+    test('B72: cabeçalho mostra o tipo', () {
+      final s = SessaoContagem.completa(
+        usuarioUid: 'u1',
+        inventarioId: 'inv1',
+        numero: 2,
+        codigo: 'X_002',
+        rodada: 'contagem_1',
+        statusRodada: null,
+        statusIndividual: null,
+        natureza: 'gas',
+      );
+      expect(s.rotuloCabecalho, startsWith('Inventário 002 | Gases | '));
+    });
+  });
+
+  group('B73: informativas marcadas já na geração', () {
+    test('Gases: gás consenso, cilindro divergente → C3 não necessária e '
+        'cilindro "sem C3", nunca "pendente na C3"', () {
+      final r = marcarForaDaC3(
+          cmp([gas('G1', cheio: 8, vazio: 5)], [gas('G1', cheio: 8, vazio: 4)]),
+          Natureza.gas);
+      expect(divergenciasParaC3(r, Natureza.gas), 0); // C3 nao_necessaria
+      final cil = de(r, Natureza.cilindro);
+      expect(cil.emAnalise, isTrue);
+      expect(cil.foraDaC3, isTrue);
+      expect(cil.semC3, isTrue);
+      expect(cil.pendenteAtual, isFalse);
+      expect(cil.origemFinal, isNot('pendente na C3'));
+      expect(ResumoC3.de(r).total, 0);
+      // e sobrevive à gravação/leitura do Firestore:
+      final volta = LinhaComparativo.deMapa(cil.toMap());
+      expect(volta.foraDaC3, isTrue);
+      expect(volta.semC3, isTrue);
+    });
+    test('Gases: gás e cilindro divergentes → antes de chamar a C3, gás '
+        'pendente e cilindro informativo', () {
+      final r = marcarForaDaC3(
+          cmp([gas('G1', cheio: 8, vazio: 5)], [gas('G1', cheio: 7, vazio: 4)]),
+          Natureza.gas);
+      final g = de(r, Natureza.gas);
+      final cil = de(r, Natureza.cilindro);
+      expect(g.naC3, isTrue);
+      expect(g.pendenteAtual, isTrue);
+      expect(g.origemFinal, 'pendente na C3');
+      expect(cil.naC3, isFalse);
+      expect(cil.semC3, isTrue);
+      expect(ResumoC3.de(r).total, 1);
+      final csv = resultadoCsv(r, c3Selecionada: Natureza.gas);
+      final linhaCil =
+          csv.split('\n').firstWhere((x) => x.startsWith('cilindro;'));
+      expect(linhaCil.contains(';sem_c3;'), isTrue);
+    });
+    test('sem tipo (inventário antigo): nada é marcado', () {
+      final r = cmp([gas('G1', cheio: 8, vazio: 5)],
+          [gas('G1', cheio: 7, vazio: 4)]);
+      expect(marcarForaDaC3(r, null).any((l) => l.foraDaC3), isFalse);
+    });
+    test('consenso nunca é marcado', () {
+      final r = marcarForaDaC3(
+          cmp([mat('M1', 1)], [mat('M1', 1)]), Natureza.gas);
+      expect(r.single.foraDaC3, isFalse);
     });
   });
 }

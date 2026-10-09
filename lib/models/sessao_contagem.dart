@@ -33,6 +33,9 @@ class SessaoContagem {
   final String? statusRodada;     // ver StatusRodada
   final String? statusIndividual; // ver StatusParticipante
   final bool inventarioAtivo;
+  /// L4: tipo do inventário ('material' | 'cilindro' | 'gas'); null = antigo
+  /// ou Simples. Define que produtos podem ser lançados.
+  final String? natureza;
 
   final DateTime atualizadoEm;
 
@@ -47,6 +50,7 @@ class SessaoContagem {
     this.statusRodada,
     this.statusIndividual,
     this.inventarioAtivo = false,
+    this.natureza,
     required this.atualizadoEm,
   });
 
@@ -66,6 +70,7 @@ class SessaoContagem {
     required String? statusRodada,
     required String? statusIndividual,
     bool inventarioAtivo = true,
+    String? natureza,
   }) =>
       SessaoContagem._(
         schemaVersao: schemaAtual,
@@ -78,8 +83,34 @@ class SessaoContagem {
         statusRodada: statusRodada,
         statusIndividual: statusIndividual,
         inventarioAtivo: inventarioAtivo,
+        natureza: natureza,
         atualizadoEm: DateTime.now(),
       );
+
+  /// L4: o produto (coleção `materiais` ou `gases`) cabe neste inventário?
+  /// Inventário de Materiais só aceita `materiais`; de Cilindros ou Gases,
+  /// só `gases`. Simples ou inventário sem tipo: aceita tudo.
+  bool aceitaOrigem(String? origem) => origemPermitida(natureza, origem);
+
+  static bool origemPermitida(String? natureza, String? origem) {
+    switch (natureza) {
+      case 'material':
+        return origem == 'materiais';
+      case 'cilindro':
+      case 'gas':
+        return origem == 'gases';
+      default:
+        return true;
+    }
+  }
+
+  /// Rótulo do tipo para mensagens.
+  static String rotuloNatureza(String? natureza) => switch (natureza) {
+        'material' => 'Materiais',
+        'cilindro' => 'Cilindros',
+        'gas' => 'Gases',
+        _ => '—',
+      };
 
   bool get isSimples => tipo == TipoSessao.simples;
   bool get isCompleta => tipo == TipoSessao.completa;
@@ -123,7 +154,9 @@ class SessaoContagem {
   String get rotuloCabecalho {
     if (isSimples) return 'Contagem Simples';
     final r = Rodadas.rotulo(rodada ?? '');
-    return 'Inventário $numeroFormatado | $r | $rotuloStatus';
+    // B72: o tipo aparece no cabeçalho ("Inventário 002 | Gases | C1 | …").
+    final tipo = natureza != null ? ' | ${rotuloNatureza(natureza)}' : '';
+    return 'Inventário $numeroFormatado$tipo | $r | $rotuloStatus';
   }
 
   String get rotuloStatus {
@@ -173,6 +206,7 @@ class SessaoContagem {
       statusRodada: statusRodada ?? this.statusRodada,
       statusIndividual: statusIndividual ?? this.statusIndividual,
       inventarioAtivo: inventarioAtivo ?? this.inventarioAtivo,
+      natureza: natureza,
       atualizadoEm: DateTime.now(),
     );
   }
@@ -190,6 +224,7 @@ class SessaoContagem {
         'status_rodada': statusRodada,
         'status_individual': statusIndividual,
         'inventario_ativo': inventarioAtivo,
+        if (natureza != null) 'natureza': natureza,
         'atualizado_em': atualizadoEm.toIso8601String(),
       };
 
@@ -232,6 +267,7 @@ class SessaoContagem {
       statusRodada: m['status_rodada'] as String?,
       statusIndividual: m['status_individual'] as String?,
       inventarioAtivo: m['inventario_ativo'] == true,
+      natureza: m['natureza'] as String?,
       atualizadoEm: DateTime.tryParse('${m['atualizado_em']}') ?? DateTime.now(),
     );
   }

@@ -159,6 +159,9 @@ class Inventario {
   final String? encerradoPor;             // UID de quem encerrou
   final String? canceladoPor;             // UID de quem cancelou
   final String? motivoCancelamento;
+  /// L4: tipo da Contagem Completa, escolhido na abertura:
+  /// 'material' | 'cilindro' | 'gas'. Null = inventário anterior ao L4.
+  final String? naturezaContagem;
 
   Inventario({
     required this.id,
@@ -183,6 +186,7 @@ class Inventario {
     this.encerradoPor,
     this.canceladoPor,
     this.motivoCancelamento,
+    this.naturezaContagem,
   });
 
   /// Cria um Inventario a partir de um documento Firestore
@@ -228,6 +232,7 @@ class Inventario {
       encerradoPor: data['encerrado_por'],
       canceladoPor: data['cancelado_por'],
       motivoCancelamento: data['motivo_cancelamento'],
+      naturezaContagem: data['natureza_contagem'] as String?,
     );
   }
 
@@ -254,6 +259,7 @@ class Inventario {
       'tipo_contagem': tipoContagem.name,
       'deposito': deposito,
       'tipo_material': tipoMaterial,
+      if (naturezaContagem != null) 'natureza_contagem': naturezaContagem,
       'descricao': descricao,
       'total_itens_estoque': totalItensEstoque,
       'valor_total_estoque': valorTotalEstoque,
@@ -472,6 +478,7 @@ class Inventario {
     String? encerradoPor,
     String? canceladoPor,
     String? motivoCancelamento,
+    String? naturezaContagem,
   }) {
     return Inventario(
       id: id ?? this.id,
@@ -496,6 +503,7 @@ class Inventario {
       encerradoPor: encerradoPor ?? this.encerradoPor,
       canceladoPor: canceladoPor ?? this.canceladoPor,
       motivoCancelamento: motivoCancelamento ?? this.motivoCancelamento,
+      naturezaContagem: naturezaContagem ?? this.naturezaContagem,
     );
   }
 }
@@ -518,6 +526,7 @@ class ContagemInfo {
   final String? modo;          // C3: 'online' | 'offline'
   final int totalTarefas;      // C3: total de linhas a apurar
   final int tarefasConcluidas; // C3: linhas concluídas
+  final String? natureza;      // C3 (L3): 'material' | 'cilindro' | 'gas'
 
   ContagemInfo({
     this.iniciadaEm,
@@ -530,6 +539,7 @@ class ContagemInfo {
     this.modo,
     this.totalTarefas = 0,
     this.tarefasConcluidas = 0,
+    this.natureza,
   });
 
   /// Cria ContagemInfo a partir de um Map
@@ -549,6 +559,7 @@ class ContagemInfo {
       modo: map['modo'] as String?,
       totalTarefas: _lerInt(map['total_tarefas']),
       tarefasConcluidas: _lerInt(map['tarefas_concluidas']),
+      natureza: map['natureza'] as String?,
     );
   }
 
@@ -569,6 +580,7 @@ class ContagemInfo {
       if (modo != null) 'modo': modo,
       if (totalTarefas > 0) 'total_tarefas': totalTarefas,
       if (tarefasConcluidas > 0) 'tarefas_concluidas': tarefasConcluidas,
+      if (natureza != null) 'natureza': natureza,
     };
   }
 

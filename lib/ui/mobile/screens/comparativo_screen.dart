@@ -1,39 +1,46 @@
 // lib/ui/mobile/screens/comparativo_screen.dart
 //
-// Entrega 1 (teste em campo): tela do comparativo C1 × C2.
-
-import 'dart:io';
+// Relatório do inventário NA TELA, igual ao .xlsx (modelo do Djalma, 09/10):
+// abas C1 Lançamentos · C1 Consolidado · C2 Lançamentos · C2 Consolidado ·
+// C3 · Final. As abas vêm do mesmo montador do arquivo
+// (relatorio_inventario.dart), então tela e planilha nunca divergem.
 
 import 'package:flutter/material.dart';
 import 'package:open_filex/open_filex.dart';
-import 'package:path_provider/path_provider.dart';
 
+import 'package:lego/models/inventario.dart';
 import 'package:lego/services/comparativo.dart';
 import 'package:lego/services/comparativo_rodadas_service.dart';
+import 'package:lego/services/relatorio_inventario.dart';
+import 'package:lego/services/relatorio_inventario_service.dart';
 
 class ComparativoScreen extends StatefulWidget {
   final String inventarioId;
   final String numeroFormatado;
+  /// Tipo do inventário (define as abas; null = antigo: os três).
+  final Natureza? tipo;
+  /// Consolidado da C3 (para o resumo; num inventário com tipo é o tipo).
+  final Natureza? naturezaC3;
 
   const ComparativoScreen({
     super.key,
     required this.inventarioId,
     required this.numeroFormatado,
+    this.tipo,
+    this.naturezaC3,
   });
 
   @override
   State<ComparativoScreen> createState() => _ComparativoScreenState();
 }
 
-enum _Filtro { emAnalise, encerradas, todas }
-
 class _ComparativoScreenState extends State<ComparativoScreen> {
-  final _service = ComparativoRodadasService();
+  final _cmp = ComparativoRodadasService();
   bool _carregando = true;
+  bool _exportando = false;
   String? _erro;
+  List<AbaRelatorio> _abas = const [];
   List<LinhaComparativo> _linhas = const [];
-  _Filtro _filtro = _Filtro.emAnalise;
-  String _busca = '';
 
   @override
   void initState() {
@@ -47,258 +54,211 @@ class _ComparativoScreenState extends State<ComparativoScreen> {
       _erro = null;
     });
     try {
-      final linhas = await _service.lerComparativo(widget.inventarioId);
+      final (raw1, res1) =
+          await _cmp.carregarRodadaCompleta(widget.inventarioId, Rodadas.c1);
+      final (raw2, res2) =
+          await _cmp.carregarRodadaCompleta(widget.inventarioId, Rodadas.c2);
+      final linhas = await _cmp.lerComparativo(widget.inventarioId);
+      final abas = montarRelatorio(
+        numero: widget.numeroFormatado,
+        tipo: widget.tipo, // igual ao .xlsx
+        geradoEm: DateTime.now(),
+        lancsC1: raw1,
+        lancsC2: raw2,
+        resumoC1: res1,
+        resumoC2: res2,
+        comparativo: linhas,
+      );
       if (!mounted) return;
       setState(() {
+        _abas = abas;
         _linhas = linhas;
         _carregando = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _erro = 'Erro ao ler o comparativo: $e';
+        _erro = 'Erro ao carregar o relatório (precisa de internet): $e';
         _carregando = false;
       });
     }
   }
 
   Future<void> _exportar() async {
+    setState(() => _exportando = true);
     try {
-      final dir = await getExternalStorageDirectory() ??
-          await getApplicationDocumentsDirectory();
-      final agora = DateTime.now();
-      String dd(int v) => v.toString().padLeft(2, '0');
-      final nome = 'LEGO_resultado_${widget.numeroFormatado}_'
-          '${agora.year}${dd(agora.month)}${dd(agora.day)}_'
-          '${dd(agora.hour)}${dd(agora.minute)}.csv';
-      final arq = File('${dir.path}/$nome');
-      // BOM para o Excel abrir acentos corretamente.
-      await arq.writeAsString('\uFEFF${resultadoCsv(_linhas)}');
+      final caminho =
+          await RelatorioInventarioService().exportar(widget.inventarioId);
       if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Planilha salva: ${arq.path}')));
-      await OpenFilex.open(arq.path);
+      ScaffoldMessenger.of(context)
+          .showSnackBar(SnackBar(content: Text('Planilha salva: $caminho')));
+      await OpenFilex.open(caminho);
     } catch (e) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(
           content: Text('Erro ao exportar: $e'), backgroundColor: Colors.red));
+    } finally {
+      if (mounted) setState(() => _exportando = false);
     }
-  }
-
-  List<LinhaComparativo> get _visiveis {
-    final q = _busca.trim().toLowerCase();
-    return _linhas.where((l) {
-      final passaFiltro = switch (_filtro) {
-        _Filtro.emAnalise => l.emAnalise,
-        _Filtro.encerradas => !l.emAnalise,
-        _Filtro.todas => true,
-      };
-      if (!passaFiltro) return false;
-      if (q.isEmpty) return true;
-      return l.codigo.toLowerCase().contains(q) ||
-          (l.tag ?? '').toLowerCase().contains(q) ||
-          (l.lote ?? '').toLowerCase().contains(q) ||
-          l.descricao.toLowerCase().contains(q);
-    }).toList();
   }
 
   @override
   Widget build(BuildContext context) {
-    final r = ResumoComparativo.de(_linhas);
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Resultado ${widget.numeroFormatado}'),
-        actions: [
-          IconButton(
-            tooltip: 'Exportar planilha (CSV)',
-            onPressed: _carregando || _linhas.isEmpty ? null : _exportar,
-            icon: const Icon(Icons.file_download),
-          ),
-          IconButton(
-            tooltip: 'Atualizar',
-            onPressed: _carregando ? null : _carregar,
-            icon: const Icon(Icons.refresh),
-          ),
-        ],
-      ),
-      body: _carregando
-          ? const Center(child: CircularProgressIndicator())
-          : _erro != null
-              ? Center(
-                  child: Padding(
-                    padding: const EdgeInsets.all(24),
-                    child: Text(_erro!, style: const TextStyle(color: Colors.red)),
-                  ),
-                )
-              : Column(
-                  children: [
-                    _resumo(r),
-                    Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 12),
-                      child: TextField(
-                        decoration: const InputDecoration(
-                          prefixIcon: Icon(Icons.search),
-                          hintText: 'Buscar código, tag, lote ou descrição',
-                          isDense: true,
-                        ),
-                        onChanged: (v) => setState(() => _busca = v),
-                      ),
-                    ),
-                    Padding(
-                      padding: const EdgeInsets.all(8),
-                      child: SegmentedButton<_Filtro>(
-                        segments: [
-                          ButtonSegment(
-                              value: _Filtro.emAnalise,
-                              label: Text('Divergências (${r.emAnalise})')),
-                          ButtonSegment(
-                              value: _Filtro.encerradas,
-                              label: Text('Consenso (${r.encerradas})')),
-                          ButtonSegment(
-                              value: _Filtro.todas,
-                              label: Text('Todas (${r.total})')),
-                        ],
-                        selected: {_filtro},
-                        onSelectionChanged: (s) =>
-                            setState(() => _filtro = s.first),
-                      ),
-                    ),
-                    Expanded(child: _lista()),
-                  ],
+    if (_carregando || _erro != null || _abas.isEmpty) {
+      return Scaffold(
+        appBar: AppBar(title: Text('Relatório ${widget.numeroFormatado}')),
+        body: Center(
+          child: _carregando
+              ? const CircularProgressIndicator()
+              : Padding(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(mainAxisSize: MainAxisSize.min, children: [
+                    Text(_erro ?? 'Sem dados.',
+                        style: const TextStyle(color: Colors.red)),
+                    const SizedBox(height: 12),
+                    OutlinedButton(
+                        onPressed: _carregar,
+                        child: const Text('Tentar de novo')),
+                  ]),
                 ),
-    );
-  }
-
-  Widget _resumo(ResumoComparativo r) {
-    Widget bloco(String rotulo, int valor, Color cor) => Expanded(
-          child: Column(
-            children: [
-              Text('$valor',
-                  style: TextStyle(
-                      fontSize: 22, fontWeight: FontWeight.bold, color: cor)),
-              Text(rotulo,
-                  textAlign: TextAlign.center,
-                  style: const TextStyle(fontSize: 11)),
-            ],
-          ),
-        );
-    final c3 = ResumoC3.de(_linhas);
-    return Card(
-      margin: const EdgeInsets.all(12),
-      child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 4),
-        child: Column(
-          children: [
-            Row(
-              children: [
-                bloco('Itens', r.total, Colors.black87),
-                bloco('Encerradas', r.encerradas, Colors.green.shade700),
-                bloco('Divergentes', r.divergentes + r.conflitos,
-                Colors.orange.shade800),
-                bloco('Só C1', r.soC1, Colors.red.shade700),
-                bloco('Só C2', r.soC2, Colors.red.shade700),
-              ],
+        ),
+      );
+    }
+    return DefaultTabController(
+      length: _abas.length,
+      child: Scaffold(
+        appBar: AppBar(
+          title: Text('Relatório ${widget.numeroFormatado}'
+              '${widget.tipo != null ? ' · ${widget.tipo!.rotulo}' : ''}'),
+          actions: [
+            IconButton(
+              tooltip: 'Exportar planilha (.xlsx)',
+              onPressed: _exportando ? null : _exportar,
+              icon: _exportando
+                  ? const SizedBox(
+                      width: 18,
+                      height: 18,
+                      child: CircularProgressIndicator(strokeWidth: 2))
+                  : const Icon(Icons.file_download),
             ),
-            if (c3.total > 0) ...[
-              const SizedBox(height: 8),
-              Text('C3: ${c3.contadas} de ${c3.total} recontados',
-                  style: const TextStyle(fontWeight: FontWeight.w600)),
-            ],
           ],
+          bottom: TabBar(
+            isScrollable: true,
+            tabAlignment: TabAlignment.start,
+            tabs: [for (final a in _abas) Tab(text: a.nome)],
+          ),
+        ),
+        body: TabBarView(
+          children: [for (final a in _abas) _aba(a)],
         ),
       ),
     );
   }
 
-  Widget _lista() {
-    final itens = _visiveis;
-    if (itens.isEmpty) {
-      return const Center(child: Text('Nenhum item neste filtro.'));
-    }
-    return ListView.separated(
-      itemCount: itens.length,
-      separatorBuilder: (_, __) => const Divider(height: 1),
-      itemBuilder: (_, i) => _linha(itens[i]),
+  Widget _aba(AbaRelatorio a) {
+    final topo = a.linhas
+        .take(a.linhaCabecalho)
+        .where((l) => l.isNotEmpty)
+        .map((l) => l.first?.toString() ?? '')
+        .toList();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 10, 12, 4),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final t in topo)
+                Text(t,
+                    style: TextStyle(
+                        fontWeight: t == topo.first
+                            ? FontWeight.bold
+                            : FontWeight.normal,
+                        fontSize: t == topo.first ? 14 : 12)),
+              if (a.nome == 'C3' || a.nome.startsWith('Final')) _resumo(),
+              Text('${a.dados.length} linha(s)',
+                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+            ],
+          ),
+        ),
+        Expanded(
+          child: a.dados.isEmpty
+              ? const Center(child: Text('Nenhuma linha.'))
+              : SingleChildScrollView(
+                  child: SingleChildScrollView(
+                    scrollDirection: Axis.horizontal,
+                    child: DataTable(
+                      headingRowHeight: 36,
+                      dataRowMinHeight: 30,
+                      dataRowMaxHeight: 44,
+                      columnSpacing: 16,
+                      headingTextStyle: const TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 12,
+                          color: Colors.black87),
+                      columns: [
+                        for (final c in a.cabecalho)
+                          DataColumn(label: Text('${c ?? ''}')),
+                      ],
+                      rows: [
+                        for (final l in a.dados)
+                          DataRow(
+                            color: WidgetStateProperty.resolveWith(
+                                (_) => _corLinha(a, l)),
+                            cells: [
+                              for (var i = 0; i < a.cabecalho.length; i++)
+                                DataCell(Text(
+                                    _fmt(i < l.length ? l[i] : null),
+                                    style: const TextStyle(fontSize: 12))),
+                            ],
+                          ),
+                      ],
+                    ),
+                  ),
+                ),
+        ),
+      ],
     );
   }
 
-  String _fmt(double v) =>
-      v == v.roundToDouble() ? v.toInt().toString() : v.toStringAsFixed(2);
-
-  String _valores(TotaisRodada? t) {
-    if (t == null) return '—';
-    if (t.naoEncontrado) return 'NÃO encontrado';
-    if (t.conflito) return 'CONFLITO (leituras contraditórias)';
-    final partes = <String>['qtd ${_fmt(t.quantidade)}'];
-    if (t.cheio > 0 || t.vazio > 0) {
-      partes.add('cheio ${_fmt(t.cheio)}');
-      partes.add('vazio ${_fmt(t.vazio)}');
-    }
-    if (t.ocorrencias > 1) partes.add('${t.ocorrencias} leituras');
-    return partes.join(' · ');
+  /// Aba C3: pendente em laranja, informativo em cinza.
+  Color? _corLinha(AbaRelatorio a, List<Object?> l) {
+    if (a.nome != 'C3') return null;
+    final s = l.length > 10 ? '${l[10]}' : '';
+    if (s.startsWith('pendente')) return Colors.orange.withValues(alpha: 0.10);
+    if (s.startsWith('informativo')) return Colors.grey.withValues(alpha: 0.12);
+    return null;
   }
 
-  Widget _linha(LinhaComparativo l) {
-    final (corOrig, seloOrig) = switch (l.motivo) {
-      MotivoAnalise.soC1 => (Colors.red.shade700, 'SÓ C1'),
-      MotivoAnalise.soC2 => (Colors.red.shade700, 'SÓ C2'),
-      MotivoAnalise.divergente => (Colors.orange.shade800, 'DIVERGE'),
-      MotivoAnalise.conflito => (Colors.purple.shade700, 'CONFLITO'),
-      null => (Colors.green.shade700, 'OK'),
-    };
-    // A1: divergência original × pendência atual.
-    final resolvidaPelaC3 = l.emAnalise && l.c3 != null;
-    final cor = resolvidaPelaC3 ? Colors.blue.shade800 : corOrig;
-    final selo = resolvidaPelaC3 ? 'C3 ✓' : seloOrig;
-    final titulo = l.tipo == TipoChave.tag
-        ? 'TAG ${l.tag} · ${l.codigo}'
-        : '${l.codigo}${(l.lote ?? '').isNotEmpty ? ' · lote ${l.lote}' : ''}';
+  Widget _resumo() {
+    final r = resumoPorNatureza(_linhas, widget.naturezaC3).values.where(
+        (rn) => rn.selecionada || _linhas.any((l) => l.natureza == rn.natureza));
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      child: Row(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Container(
-            width: 64,
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
-            decoration: BoxDecoration(
-              color: cor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(4),
-            ),
-            child: Text(selo,
-                textAlign: TextAlign.center,
-                style: TextStyle(
-                    color: cor, fontSize: 11, fontWeight: FontWeight.bold)),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(titulo,
-                    style: const TextStyle(fontWeight: FontWeight.w600)),
-          if (l.descricao.isNotEmpty)
-            Text(l.descricao, maxLines: 1, overflow: TextOverflow.ellipsis),
-          if (resolvidaPelaC3)
-            Text('Divergência original: $seloOrig',
-                style: TextStyle(color: corOrig, fontSize: 12)),
-          Text('C1: ${_valores(l.c1)}'),
-          Text('C2: ${_valores(l.c2)}'),
-          if (l.emAnalise)
-            Text(l.c3 != null
-                ? 'C3: ${_valores(l.c3)} (${l.c3Quem ?? '?'})'
-                : 'C3: pendente'
-                    '${l.c3ResponsavelNome != null ? ' (${l.c3ResponsavelNome})' : ''}',
-                style: TextStyle(
-                    color: l.c3 != null ? Colors.blue.shade800 : Colors.grey)),
-          if (l.valorFinal != null)
-            Text('Final: ${_valores(l.valorFinal)} · ${l.origemFinal}',
-                style: const TextStyle(fontWeight: FontWeight.w600)),
-              ],
-            ),
-          ),
+          if (widget.naturezaC3 != null)
+            Text('C3: ${widget.naturezaC3!.rotulo}',
+                style: const TextStyle(fontWeight: FontWeight.bold)),
+          for (final rn in r)
+            Text(rn.texto, style: const TextStyle(fontSize: 12)),
         ],
       ),
     );
+  }
+
+  String _fmt(Object? v) {
+    if (v == null) return '';
+    if (v is DateTime) {
+      String d(int x) => x.toString().padLeft(2, '0');
+      return '${d(v.day)}/${d(v.month)}/${v.year}';
+    }
+    if (v is double) {
+      return v.toStringAsFixed(3).replaceAll(RegExp(r'0+$'), '').replaceAll(
+          RegExp(r'\.$'), '').replaceAll('.', ',');
+    }
+    return v.toString();
   }
 }

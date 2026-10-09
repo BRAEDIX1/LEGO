@@ -10,6 +10,7 @@ import 'package:lego/config/ambiente.dart';
 import 'package:lego/config/fluxo2_config.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/models/participante.dart';
+import 'package:lego/models/sessao_contagem.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lego/services/auth_service.dart';
 import 'package:lego/services/c3_service.dart';
@@ -58,6 +59,12 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
   Participante? _eu;
 
   @override
+  void dispose() {
+    _autoAtualizar?.cancel();
+    super.dispose();
+  }
+
+  @override
   void initState() {
     super.initState();
     _carregar();
@@ -81,7 +88,7 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
       _erroCompleta = null;
     });
     if (ambienteAtual == Ambiente.teste) {
-      _carregarLocalC3(); // independe de internet
+      await _carregarLocalC3(); // independe de internet
     }
     try {
       final inv = await _inventarioService.buscarInventarioCompletoAtivo(
@@ -96,6 +103,14 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
         _eu = eu;
         _carregando = false;
       });
+      // Item 4: leitura do servidor OK → C3 que já acabou sai do aparelho.
+      if (ambienteAtual == Ambiente.teste) {
+        final descartou = await _c3.descartarLocalObsoleto(
+          inventarioAtivoId: inv?.id,
+          statusC3Ativo: inv?.statusRodada(Rodadas.c3),
+        );
+        if (descartou) await _carregarLocalC3();
+      }
       if (inv != null && ambienteAtual == Ambiente.teste) {
         _carregarProntoC3(inv);
       }
@@ -158,11 +173,53 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     }
   }
 
+  /// L4: tipo da Contagem Completa, escolhido por quem ABRE o inventário.
+  Future<String?> _escolherNatureza() => showDialog<String>(
+        context: context,
+        builder: (ctx) => SimpleDialog(
+          title: const Text('Tipo da Contagem Completa'),
+          children: [
+            const Padding(
+              padding: EdgeInsets.fromLTRB(24, 0, 24, 8),
+              child: Text(
+                  'Vale para C1, C2 e C3 deste inventário e não pode ser '
+                  'trocado depois.',
+                  style: TextStyle(fontSize: 13)),
+            ),
+            for (final (valor, titulo, detalhe, icone) in const [
+              ('material', 'Materiais', 'Só produtos de materiais. '
+                  'Compara quantidade por local e prateleira.', Icons.category),
+              ('cilindro', 'Cilindros', 'Só produtos de gás. Compara o total '
+                  'de cilindros (cheio e vazio valem igual) por local.',
+                  Icons.propane_tank),
+              ('gas', 'Gases', 'Só produtos de gás. Compara só os CHEIOS; '
+                  'vazios são desprezados.', Icons.local_gas_station),
+            ])
+              SimpleDialogOption(
+                onPressed: () => Navigator.pop(ctx, valor),
+                child: ListTile(
+                  leading: Icon(icone, color: Colors.deepPurple),
+                  title: Text(titulo,
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                  subtitle: Text(detalhe),
+                ),
+              ),
+          ],
+        ),
+      );
+
   Future<void> _escolherRodada(String rodada) async {
     final rotulo = Rodadas.rotulo(rodada);
+    // L4: sem inventário ativo, quem abre escolhe o tipo.
+    String? natureza;
+    if (_ativo == null) {
+      natureza = await _escolherNatureza();
+      if (natureza == null) return;
+    }
     final alvo = _ativo != null
         ? 'no Inventário ${_ativo!.numeroFormatado}'
-        : 'num novo Inventário Completo';
+        : 'num novo Inventário Completo de '
+            '${SessaoContagem.rotuloNatureza(natureza)}';
     final jaEstou = _eu?.rodadaBase == rodada;
 
     if (!jaEstou) {
@@ -193,7 +250,14 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
 
     setState(() => _processando = true);
     try {
-      await _sync.entrarContagemCompleta(rodada);
+      final sessao =
+          await _sync.entrarContagemCompleta(rodada, natureza: natureza);
+      // Corrida: outro aparelho abriu o inventário antes, com outro tipo.
+      if (natureza != null && sessao.natureza != natureza) {
+        _snack('O inventário já tinha sido aberto por outra pessoa como '
+            '${SessaoContagem.rotuloNatureza(sessao.natureza)}. '
+            'Vale esse tipo.');
+      }
       _abrirHome();
     } on InventarioLegadoAtivoException catch (e) {
       _snack(e.toString(), erro: true);
@@ -212,11 +276,46 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     }
   }
 
+  /// B66: o logout nunca pode ficar preso. Cada etapa é isolada; se alguma
+  /// falhar, o signOut do Firebase é feito mesmo assim e a tela de login abre.
+  /// O erro aparece na tela para diagnóstico.
   Future<void> _sair() async {
-    await _sync.limparSessao();
-    // B60: fecha a caixa local do usuário (ver home_page).
-    await AuthService().signOut();
-    if (mounted) Navigator.of(context).pushReplacementNamed('/login');
+    final erros = <String>[];
+    try {
+      await _sync.limparSessao();
+    } catch (e) {
+      erros.add('limparSessao: $e');
+    }
+    try {
+      // B60: fecha a caixa local do usuário (ver home_page).
+      await AuthService().signOut();
+    } catch (e) {
+      erros.add('signOut: $e');
+    }
+    if (FirebaseAuth.instance.currentUser != null) {
+      try {
+        await FirebaseAuth.instance.signOut();
+      } catch (e) {
+        erros.add('FirebaseAuth.signOut: $e');
+      }
+    }
+    if (!mounted) return;
+    if (erros.isNotEmpty) {
+      debugPrint('⚠️ Logout com falhas: ${erros.join(' | ')}');
+      await showDialog<void>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Logout com aviso (B66)'),
+          content: SingleChildScrollView(child: Text(erros.join('\n\n'))),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx), child: const Text('OK')),
+          ],
+        ),
+      );
+      if (!mounted) return;
+    }
+    Navigator.of(context).pushNamedAndRemoveUntil('/login', (_) => false);
   }
 
   @override
@@ -312,6 +411,13 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
                     : 'Nenhum Inventário Completo ativo. '
                         'Um novo será aberto quando você escolher a rodada.',
               ),
+              if (_ativo?.naturezaContagem != null) ...[
+                const SizedBox(height: 4),
+                Text(
+                  'Tipo: ${SessaoContagem.rotuloNatureza(_ativo!.naturezaContagem)}',
+                  style: const TextStyle(fontWeight: FontWeight.bold),
+                ),
+              ],
               if (_eu?.rodadaBase != null) ...[
                 const SizedBox(height: 4),
                 Text(
@@ -363,15 +469,46 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     } catch (_) {}
   }
 
+  bool _finalizeiC3 = false;
+  /// B77: o servidor confirmou que não recebi itens nesta C3.
+  bool _semTarefasC3 = false;
+  Timer? _autoAtualizar;
+
   Future<void> _carregarProntoC3(Inventario inv) async {
     final st = inv.statusRodada(Rodadas.c3);
+    // Sem botão "atualizar": enquanto a C3 espera o analista, a tela se
+    // atualiza sozinha.
+    _autoAtualizar?.cancel();
+    if (st == StatusRodada.aguardandoParticipantes ||
+        st == StatusRodada.distribuindo ||
+        st == StatusRodada.redistribuindo) {
+      _autoAtualizar = Timer(const Duration(seconds: 8), () {
+        if (mounted && !_processando) _carregar();
+      });
+    }
     if (st != StatusRodada.aguardandoParticipantes &&
         st != StatusRodada.emAndamento) {
       return;
     }
     try {
-      final p = await _c3.estouPronto(inv.id);
-      if (mounted) setState(() => _prontoC3 = p);
+      final (pronto, finalizado) = await _c3.meuStatusC3(inv.id);
+      if (!mounted) return;
+      setState(() {
+        _prontoC3 = pronto;
+        _finalizeiC3 = finalizado;
+      });
+      // Item 6: C3 em andamento e eu participo → baixa sozinho (uma vez).
+      final uid = FirebaseAuth.instance.currentUser?.uid;
+      final euNaC3 =
+          inv.contagens[Rodadas.c3]?.usuarios.contains(uid) ?? false;
+      if (st == StatusRodada.emAndamento &&
+          euNaC3 &&
+          !finalizado &&
+          _tarefasLocais == 0) {
+        final t = await _c3.baixarMinhasTarefas(inv.id, inv.numeroFormatado);
+        await _carregarLocalC3();
+        if (mounted) setState(() => _semTarefasC3 = t.isEmpty);
+      }
     } catch (_) {}
   }
 
@@ -391,7 +528,8 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
   void _abrirMinhasTarefas() {
     Navigator.of(context)
         .push(MaterialPageRoute(builder: (_) => const MinhasTarefasC3Screen()))
-        .then((_) => _carregarLocalC3());
+        // B76: relê também o status no servidor (finalizei?), não só o local.
+        .then((_) => _carregar());
   }
 
   Widget _buildPainelTeste(Inventario inv) {
@@ -442,12 +580,46 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     if (st == StatusRodada.distribuindo || st == StatusRodada.redistribuindo) {
       filhos.addAll(const [
         SizedBox(height: 8),
-        Text('O analista está distribuindo as tarefas da C3. Toque em '
-            'atualizar em alguns instantes.'),
+        Text('O analista está distribuindo as tarefas da C3. A tela se '
+            'atualiza sozinha.'),
       ]);
     }
 
-    if (st == StatusRodada.emAndamento && euNaC3) {
+    if (st == StatusRodada.emAndamento && euNaC3 && _finalizeiC3) {
+      filhos.addAll(const [
+        SizedBox(height: 8),
+        Text('✅ Você finalizou a sua C3.'),
+      ]);
+    }
+
+    // B77: 0 de 0 = participação concluída (confirmado no servidor).
+    if (st == StatusRodada.emAndamento && euNaC3 && !_finalizeiC3 &&
+        _tarefasLocais == 0 && _semTarefasC3) {
+      filhos.addAll([
+        const SizedBox(height: 8),
+        const Text('Você não recebeu itens nesta C3.'),
+        FilledButton.icon(
+          style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+          icon: const Icon(Icons.check_circle),
+          label: const Text('Finalizar minha C3'),
+          onPressed: () async {
+            setState(() => _processando = true);
+            try {
+              await _c3.finalizarSemTarefas(inv.id);
+              _snack('C3 finalizada.');
+              await _carregar();
+            } catch (e) {
+              _snack('Não foi possível finalizar: $e', erro: true);
+            } finally {
+              if (mounted) setState(() => _processando = false);
+            }
+          },
+        ),
+      ]);
+    }
+
+    if (st == StatusRodada.emAndamento && euNaC3 && !_finalizeiC3 &&
+        _tarefasLocais == 0 && !_semTarefasC3) {
       filhos.addAll([
         const SizedBox(height: 8),
         FilledButton.icon(
@@ -460,8 +632,13 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
               final t =
                   await _c3.baixarMinhasTarefas(inv.id, inv.numeroFormatado);
               await _carregarLocalC3();
-              _snack('${t.length} tarefa(s) no aparelho.');
-              _abrirMinhasTarefas();
+              if (t.isEmpty) {
+                if (mounted) setState(() => _semTarefasC3 = true);
+                _snack('Você não recebeu itens nesta C3.');
+              } else {
+                _snack('${t.length} tarefa(s) no aparelho.');
+                _abrirMinhasTarefas();
+              }
             } catch (e) {
               _snack('Erro ao baixar (precisa de internet): $e', erro: true);
             } finally {

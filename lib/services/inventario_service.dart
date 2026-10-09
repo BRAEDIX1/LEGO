@@ -80,12 +80,15 @@ class ResultadoInventarioCompleto {
 
   /// true = este chamado criou o inventário; false = entrou no que já estava ativo.
   final bool criado;
+  /// L4: tipo do inventário ('material' | 'cilindro' | 'gas'); null = antigo.
+  final String? naturezaContagem;
 
   const ResultadoInventarioCompleto({
     required this.id,
     required this.numero,
     required this.codigo,
     required this.criado,
+    this.naturezaContagem,
   });
 
   String get numeroFormatado => numero.toString().padLeft(3, '0');
@@ -278,6 +281,9 @@ class InventarioService {
   /// Exige conexão: transações do Firestore não rodam offline.
   Future<ResultadoInventarioCompleto> criarOuEntrarInventarioCompleto({
     required String origem, // 'mobile' | 'desktop'
+    /// L4: 'material' | 'cilindro' | 'gas' — só usado se o inventário for
+    /// CRIADO agora; quem entra num ativo herda o tipo dele.
+    String? naturezaContagem,
     String? tipoMaterial,
     String? deposito,
     String? descricao,
@@ -324,6 +330,7 @@ class InventarioService {
               numero: ativo.numero,
               codigo: ativo.codigo,
               criado: false,
+              naturezaContagem: ativo.naturezaContagem,
             );
           }
         }
@@ -349,6 +356,7 @@ class InventarioService {
         'tipo_contagem': TipoContagem.completa.name,
         'fluxo_versao': FluxoVersao.maquinaEstados,
         'origem_criacao': origem,
+        if (naturezaContagem != null) 'natureza_contagem': naturezaContagem,
         'tipo_material': tipoMaterial,
         'deposito': deposito,
         'descricao': descricao,
@@ -390,6 +398,7 @@ class InventarioService {
           'numero': numero,
           'codigo': codigo,
           'origem': origem,
+          if (naturezaContagem != null) 'natureza': naturezaContagem,
           if (travaOrfa != null) 'trava_orfa_anterior': travaOrfa,
         },
       );
@@ -399,6 +408,7 @@ class InventarioService {
         numero: numero,
         codigo: codigo,
         criado: true,
+        naturezaContagem: naturezaContagem,
       );
     }).then((r) {
       debugPrint(r.criado

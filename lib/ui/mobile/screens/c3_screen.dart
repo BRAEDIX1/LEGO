@@ -1,16 +1,23 @@
 // lib/ui/mobile/screens/c3_screen.dart
 //
-// Entrega 3 (teste acelerado): "Minhas tarefas C3" do operador.
+// "Minhas tarefas C3" do operador (lista de itens divergentes).
 // - Trabalha com as tarefas guardadas no aparelho: funciona SEM internet.
 // - Contagem às cegas: não mostra C1 nem C2.
-// - "Sincronizar" envia o que foi concluído quando houver rede.
+// - Item 6 (Djalma 09/10): tocar no item abre a TELA PADRÃO de lançamento
+//   (LancamentoC3Page, na home_page) com o item e a localização fixados.
+// - Sincronização automática (ao abrir, ao voltar de um lançamento, quando a
+//   rede volta e a cada 20 s enquanto houver pendência). Sem botão atualizar.
+// - "Finalizar minha C3" só habilita com 100% das tarefas sincronizadas.
 
+import 'dart:async';
+
+import 'package:connectivity_plus/connectivity_plus.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
+import 'package:lego/models/sessao_contagem.dart';
 import 'package:lego/services/c3.dart';
 import 'package:lego/services/c3_service.dart';
-import 'package:lego/services/comparativo.dart';
+import 'package:lego/ui/home_page.dart' show LancamentoC3Page;
 
 class C3Screen extends StatelessWidget {
   // Mantido por compatibilidade de chamada; a tela lê do aparelho.
@@ -32,15 +39,43 @@ class MinhasTarefasC3Screen extends StatefulWidget {
 class _MinhasTarefasC3ScreenState extends State<MinhasTarefasC3Screen> {
   final _c3 = C3Service();
   bool _carregando = true;
-  bool _ocupado = false;
+  bool _sincronizando = false;
+  bool _finalizando = false;
   String? _numero;
   List<TarefaC3Local> _tarefas = const [];
+  StreamSubscription<List<ConnectivityResult>>? _redeSub;
+  Timer? _timer;
 
   @override
   void initState() {
     super.initState();
     _carregar(sincronizarDepois: true);
+    // Rede voltou → sincroniza sozinho.
+    _redeSub = Connectivity().onConnectivityChanged.listen((r) {
+      if (r.any((x) => x != ConnectivityResult.none)) _sincronizar();
+    });
+    // Rede "presa" (Wi-Fi sem internet): tenta de novo periodicamente.
+    _timer = Timer.periodic(const Duration(seconds: 20), (_) {
+      if (_pendentes > 0) _sincronizar();
+    });
   }
+
+  @override
+  void dispose() {
+    _redeSub?.cancel();
+    _timer?.cancel();
+    super.dispose();
+  }
+
+  int get _pendentes => _tarefas
+      .where((t) =>
+          t.estado == EstadoLocalC3.atribuida ||
+          t.estado == EstadoLocalC3.concluidaLocal)
+      .length;
+
+  int get _faltaEnviar => _tarefas
+      .where((t) => t.estado == EstadoLocalC3.concluidaLocal)
+      .length;
 
   Future<void> _carregar({bool sincronizarDepois = false}) async {
     final (inv, numero, lista) = await _c3.lerLocal();
@@ -50,179 +85,119 @@ class _MinhasTarefasC3ScreenState extends State<MinhasTarefasC3Screen> {
       _tarefas = inv == null ? const [] : lista;
       _carregando = false;
     });
-    if (sincronizarDepois) _sincronizar(silencioso: true);
+    if (sincronizarDepois) _sincronizar();
   }
 
-  Future<void> _sincronizar({bool silencioso = false}) async {
-    if (_tarefas.isEmpty) return;
-    setState(() => _ocupado = true);
+  /// Silenciosa: o estado de cada item na lista já mostra o resultado.
+  Future<void> _sincronizar() async {
+    if (_faltaEnviar == 0 || _sincronizando || !mounted) return;
+    setState(() => _sincronizando = true);
     try {
       final r = await _c3.sincronizar();
       await _carregar();
-      if (!silencioso || r.enviadas > 0 || r.recusadas > 0) {
-        _snack('Enviadas: ${r.enviadas}'
-            '${r.recusadas > 0 ? ' · recusadas: ${r.recusadas}' : ''}'
-            '${r.falhas > 0 ? ' · sem rede: ${r.falhas} (ficam no aparelho)' : ''}');
+      if (r.recusadas > 0) {
+        _snack('${r.recusadas} item(ns) recusado(s) pelo servidor — veja o '
+            'motivo na lista.');
       }
-    } catch (e) {
-      if (!silencioso) _snack('Erro ao sincronizar: $e');
+    } catch (_) {
+      // sem rede: tenta de novo depois
     } finally {
-      if (mounted) setState(() => _ocupado = false);
+      if (mounted) setState(() => _sincronizando = false);
     }
   }
 
-  void _snack(String m) {
+  void _snack(String m, {bool erro = false}) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(m)));
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+        content: Text(m), backgroundColor: erro ? Colors.red : null));
   }
 
-  Future<void> _concluir(TarefaC3Local t, TotaisRodada v) async {
-    // B61: só grava no aparelho. O envio é pelo botão Sincronizar (ou ao
-    // reabrir a tela), numa sincronização única por vez.
-    final nova = await _c3.concluirLocal(t, v);
-    if (!mounted) return;
-    setState(() => _tarefas = nova);
+  String _local(TarefaC3Local t) => t.localNome ?? t.localId ?? '';
+
+  String get _cabecalho {
+    final tipo = _tarefas.isEmpty
+        ? ''
+        : ' | ${SessaoContagem.rotuloNatureza(_tarefas.first.tipo)}';
+    return 'Inventário ${_numero ?? '—'}$tipo | C3';
   }
 
-  Future<void> _contarTag(TarefaC3Local t) async {
-    final escolha = await showModalBottomSheet<String>(
-      context: context,
-      builder: (ctx) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              title: Text('TAG ${t.tag}',
-                  style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text('${t.codigo} ${t.descricao}'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.check_circle, color: Colors.green),
-              title: const Text('Encontrado CHEIO'),
-              onTap: () => Navigator.pop(ctx, 'cheio'),
-            ),
-            ListTile(
-              leading:
-                  const Icon(Icons.check_circle_outline, color: Colors.blue),
-              title: const Text('Encontrado VAZIO'),
-              onTap: () => Navigator.pop(ctx, 'vazio'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.cancel, color: Colors.red),
-              title: const Text('NÃO encontrado'),
-              onTap: () => Navigator.pop(ctx, 'nao'),
-            ),
-          ],
-        ),
-      ),
-    );
-    if (escolha == null) return;
-    final v = switch (escolha) {
-      'cheio' => const TotaisRodada(quantidade: 1, cheio: 1, ocorrencias: 1),
-      'vazio' => const TotaisRodada(quantidade: 1, vazio: 1, ocorrencias: 1),
-      _ => const TotaisRodada(ocorrencias: 1, naoEncontrado: true),
-    };
-    await _concluir(t, v);
+  Future<void> _abrir(TarefaC3Local t) async {
+    final gravou = await Navigator.of(context).push<bool>(MaterialPageRoute(
+      builder: (_) => LancamentoC3Page(tarefa: t, cabecalho: _cabecalho),
+    ));
+    await _carregar();
+    if (gravou == true) _sincronizar();
   }
 
-  Future<void> _contarMaterial(TarefaC3Local t) async {
-    final qtd = TextEditingController();
-    final cheio = TextEditingController();
-    final vazio = TextEditingController();
-    double ler(TextEditingController c) =>
-        double.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0.0;
-    final fmt = [FilteringTextInputFormatter.allow(RegExp(r'[0-9.,]'))];
-    const teclado = TextInputType.numberWithOptions(decimal: true);
-
-    final ok = await showDialog<String>(
+  Future<void> _finalizar() async {
+    final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: Text('${t.codigo}'
-            '${(t.lote ?? '').isNotEmpty ? ' · lote ${t.lote}' : ''}'),
-        content: SingleChildScrollView(
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              if (t.descricao.isNotEmpty) Text(t.descricao),
-              TextField(
-                  controller: qtd,
-                  autofocus: true,
-                  keyboardType: teclado,
-                  inputFormatters: fmt,
-                  decoration: const InputDecoration(labelText: 'Quantidade')),
-              TextField(
-                  controller: cheio,
-                  keyboardType: teclado,
-                  inputFormatters: fmt,
-                  decoration:
-                      const InputDecoration(labelText: 'Cheios (se houver)')),
-              TextField(
-                  controller: vazio,
-                  keyboardType: teclado,
-                  inputFormatters: fmt,
-                  decoration:
-                      const InputDecoration(labelText: 'Vazios (se houver)')),
-              const SizedBox(height: 8),
-              const Text('Em branco conta como zero.',
-                  style: TextStyle(fontSize: 12)),
-            ],
-          ),
-        ),
+        title: const Text('Finalizar minha C3?'),
+        content: const Text('Todos os itens estão sincronizados. Depois de '
+            'finalizar, as tarefas saem deste aparelho.'),
         actions: [
           TextButton(
-              onPressed: () => Navigator.pop(ctx, 'nao'),
-              child: const Text('NÃO encontrado')),
-          TextButton(
-              onPressed: () => Navigator.pop(ctx),
-              child: const Text('Cancelar')),
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Voltar')),
           FilledButton(
-              onPressed: () => Navigator.pop(ctx, 'ok'),
-              child: const Text('Gravar')),
+              style: FilledButton.styleFrom(backgroundColor: Colors.orange),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Finalizar')),
         ],
       ),
     );
-    if (ok == null) return;
-    await _concluir(
-      t,
-      ok == 'nao'
-          ? const TotaisRodada(ocorrencias: 1, naoEncontrado: true)
-          : TotaisRodada(
-              quantidade: ler(qtd),
-              cheio: ler(cheio),
-              vazio: ler(vazio),
-              ocorrencias: 1),
-    );
+    if (ok != true) return;
+    setState(() => _finalizando = true);
+    try {
+      await _c3.finalizarMinhaC3();
+      if (!mounted) return;
+      _snack('C3 finalizada. Obrigado!');
+      Navigator.of(context).pop();
+    } catch (e) {
+      _snack('Não foi possível finalizar (precisa de internet): $e',
+          erro: true);
+    } finally {
+      if (mounted) setState(() => _finalizando = false);
+    }
   }
 
   (IconData, Color?, String) _visual(TarefaC3Local t) => switch (t.estado) {
-        EstadoLocalC3.atribuida => (Icons.radio_button_unchecked, null, 'a fazer'),
+        EstadoLocalC3.atribuida => (Icons.radio_button_unchecked, null, 'a contar'),
         EstadoLocalC3.concluidaLocal =>
-          (Icons.check_circle_outline, Colors.orange, 'concluída · falta enviar'),
+          (Icons.cloud_upload_outlined, Colors.orange, 'contado · enviando…'),
         EstadoLocalC3.sincronizada =>
-          (Icons.cloud_done, Colors.green, 'enviada'),
+          (Icons.cloud_done, Colors.green, 'sincronizado'),
         EstadoLocalC3.recusada =>
-          (Icons.block, Colors.red, 'recusada: ${t.motivoRecusa ?? ''}'),
+          (Icons.block, Colors.red, 'recusado: ${t.motivoRecusa ?? ''}'),
       };
 
   @override
   Widget build(BuildContext context) {
-    final aFazer =
+    final aContar =
         _tarefas.where((t) => t.estado == EstadoLocalC3.atribuida).length;
-    final faltaEnviar =
-        _tarefas.where((t) => t.estado == EstadoLocalC3.concluidaLocal).length;
     final enviadas =
         _tarefas.where((t) => t.estado == EstadoLocalC3.sincronizada).length;
+    final podeFinalizar = todasSincronizadas(_tarefas);
+    // Agrupadas por local, para percorrer área por área.
+    final lista = [..._tarefas]..sort((a, b) {
+        final c = _local(a).compareTo(_local(b));
+        return c != 0 ? c : a.codigo.compareTo(b.codigo);
+      });
 
     return Scaffold(
       appBar: AppBar(
         title: Text('Minhas tarefas C3'
             '${_numero != null ? ' · Inv. $_numero' : ''}'),
         actions: [
-          IconButton(
-            tooltip: 'Sincronizar',
-            onPressed: _ocupado ? null : () => _sincronizar(),
-            icon: const Icon(Icons.sync),
-          ),
+          if (_sincronizando)
+            const Padding(
+              padding: EdgeInsets.all(16),
+              child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(strokeWidth: 2)),
+            ),
         ],
       ),
       body: _carregando
@@ -231,62 +206,71 @@ class _MinhasTarefasC3ScreenState extends State<MinhasTarefasC3Screen> {
               ? const Center(
                   child: Padding(
                   padding: EdgeInsets.all(24),
-                  child: Text('Nenhuma tarefa C3 neste aparelho. Com internet, '
-                      'use "Baixar minhas tarefas C3" na tela de escolha.'),
+                  child: Text('Nenhuma tarefa C3 neste aparelho.'),
                 ))
-              : AbsorbPointer(
-                  // B61: sem edição durante a sincronização.
-                  absorbing: _ocupado,
-                  child: Column(
+              : Column(
                   children: [
-                    if (_ocupado) const LinearProgressIndicator(),
                     Padding(
                       padding: const EdgeInsets.all(12),
                       child: Text(
-                        'A fazer: $aFazer · falta enviar: $faltaEnviar · '
-                        'enviadas: $enviadas',
+                        'A contar: $aContar · enviando: $_faltaEnviar · '
+                        'sincronizados: $enviadas de ${_tarefas.length}',
                         style: const TextStyle(fontWeight: FontWeight.bold),
-                      ),
-                    ),
-                    const Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 12),
-                      child: Text(
-                        'Pode trabalhar sem internet. Com rede, toque no '
-                        'botão sincronizar (no topo) para enviar o que está '
-                        'em "falta enviar".',
-                        style: TextStyle(fontSize: 12),
                       ),
                     ),
                     Expanded(
                       child: ListView.separated(
-                        itemCount: _tarefas.length,
+                        itemCount: lista.length,
                         separatorBuilder: (_, __) => const Divider(height: 1),
                         itemBuilder: (_, i) {
-                          final t = _tarefas[i];
+                          final t = lista[i];
                           final (icone, cor, legenda) = _visual(t);
-                          final editavel = t.estado == EstadoLocalC3.atribuida ||
-                              t.estado == EstadoLocalC3.concluidaLocal;
+                          final editavel = !_finalizando &&
+                              (t.estado == EstadoLocalC3.atribuida ||
+                                  t.estado == EstadoLocalC3.concluidaLocal);
                           return ListTile(
                             leading: Icon(icone, color: cor),
-                            title: Text(t.tipo == 'tag'
-                                ? 'TAG ${t.tag} · ${t.codigo}'
-                                : '${t.codigo}'
-                                    '${(t.lote ?? '').isNotEmpty ? ' · lote ${t.lote}' : ''}'),
-                            subtitle: Text(
-                                '${t.descricao.isNotEmpty ? '${t.descricao}\n' : ''}$legenda'),
-                            isThreeLine: t.descricao.isNotEmpty,
-                            trailing: editavel ? const Icon(Icons.edit) : null,
-                            onTap: !editavel
-                                ? null
-                                : () => t.tipo == 'tag'
-                                    ? _contarTag(t)
-                                    : _contarMaterial(t),
+                            title: Text('${t.codigo}'
+                                '${(t.lote ?? '').isNotEmpty ? ' · lote ${t.lote}' : ''}'),
+                            subtitle: Text([
+                              if (_local(t).isNotEmpty)
+                                '📍 ${_local(t)}'
+                                '${t.prateleira.isNotEmpty ? ' · prat. ${t.prateleira}' : ''}',
+                              if (t.descricao.isNotEmpty) t.descricao,
+                              legenda,
+                            ].join('\n')),
+                            isThreeLine: true,
+                            trailing:
+                                editavel ? const Icon(Icons.chevron_right) : null,
+                            onTap: editavel ? () => _abrir(t) : null,
                           );
                         },
                       ),
                     ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.all(12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          child: FilledButton.icon(
+                            style: FilledButton.styleFrom(
+                                backgroundColor: Colors.orange,
+                                padding:
+                                    const EdgeInsets.symmetric(vertical: 14)),
+                            onPressed: podeFinalizar && !_finalizando
+                                ? _finalizar
+                                : null,
+                            icon: const Icon(Icons.check_circle),
+                            label: Text(podeFinalizar
+                                ? 'Finalizar minha C3'
+                                : 'Finalizar minha C3 · faltam $_pendentes '
+                                    'item(ns) sincronizar'),
+                          ),
+                        ),
+                      ),
+                    ),
                   ],
-                ),
                 ),
     );
   }

@@ -15,6 +15,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:lego/data/repositories/produtos_repository.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/services/audit_event_service.dart';
 import 'package:lego/services/comparativo.dart';
@@ -91,16 +92,66 @@ class ComparativoRodadasService {
 
   /// Lê os lançamentos de uma rodada no servidor.
   Future<List<LancResumo>> carregarRodada(
+          String inventarioId, String rodada) async =>
+      (await carregarRodadaCompleta(inventarioId, rodada)).$2;
+
+  /// Documentos brutos da rodada (para a aba "Lançamentos" do relatório, com
+  /// `createdAt` em DateTime local) e o resumo classificado (consolidados).
+  Future<(List<Map<String, dynamic>>, List<LancResumo>)> carregarRodadaCompleta(
       String inventarioId, String rodada) async {
     final snap = await _fs
         .collection('lancamentos')
         .where('inventarioId', isEqualTo: inventarioId)
         .where('contagemId', isEqualTo: rodada)
         .get(const GetOptions(source: Source.server));
-    return snap.docs
-        .map((d) => LancResumo.deMapa(d.data()))
-        .whereType<LancResumo>()
-        .toList();
+    final brutos = [
+      for (final d in snap.docs)
+        () {
+          final m = <String, dynamic>{...d.data()};
+          final ts = m['createdAt'];
+          if (ts is Timestamp) m['createdAt'] = ts.toDate();
+          return m;
+        }(),
+    ];
+    final lancs =
+        brutos.map(LancResumo.deMapa).whereType<LancResumo>().toList();
+    return (brutos, await _classificar(lancs));
+  }
+
+  /// L3: natureza pelo cadastro (coleção do produto: `gases` ou
+  /// `materiais`), descrição e volume unitário do cadastro quando o
+  /// lançamento não tem. Sem cadastro no aparelho, fica a regra de reserva
+  /// de [LancResumo.ehGas].
+  Future<List<LancResumo>> _classificar(List<LancResumo> lancs) async {
+    final repo = ProdutosRepository();
+    final cache = <String, (String?, String?, double?)>{};
+    final out = <LancResumo>[];
+    for (final l in lancs) {
+      if (l.codigo.isEmpty) {
+        out.add(l);
+        continue;
+      }
+      final info = cache[l.codigo] ??= await () async {
+        try {
+          final p = await repo.getByCodigoPreferGases(l.codigo);
+          if (p == null) return (null, null, null);
+          final Object? o = p.origem;
+          final Object? d = p.descricao;
+          final Object? v = p.volume;
+          return (
+            o?.toString(),
+            d?.toString(),
+            v is num ? v.toDouble() : null,
+          );
+        } catch (e) {
+          debugPrint('⚠️ Comparativo: cadastro de ${l.codigo} indisponível: $e');
+          return (null, null, null);
+        }
+      }();
+      out.add(l.comOrigem(l.origem ?? info.$1,
+          descricaoCadastro: info.$2, volumeCadastro: info.$3));
+    }
+    return out;
   }
 
   /// Gera (ou devolve) o comparativo. Devolve o resumo.
@@ -110,6 +161,9 @@ class ComparativoRodadasService {
   }) async {
     final uid = _uid();
     final ref = _inventarios.doc(inventarioId);
+
+    // L4: tipo do inventário (só o consolidado dele entra no comparativo).
+    Natureza? naturezaInv;
 
     // 1) Reserva a execução (idempotência / dois analistas ao mesmo tempo).
     final jaPronto = await _fs.runTransaction<bool>((tx) async {
@@ -123,6 +177,7 @@ class ComparativoRodadasService {
         throw OperacaoNaoPermitidaException(
             'Comparativo', inventarioId, 'inventário não está ativo');
       }
+      naturezaInv = NaturezaRotulo.deNome(inv.naturezaContagem);
       for (final r in Rodadas.base) {
         if (!inv.rodadaEncerrada(r)) {
           throw OperacaoNaoPermitidaException('Comparativo', inventarioId,
@@ -166,8 +221,17 @@ class ComparativoRodadasService {
       // 2) Lê e compara.
       final c1 = await carregarRodada(inventarioId, Rodadas.c1);
       final c2 = await carregarRodada(inventarioId, Rodadas.c2);
-      final linhas = compararC1C2(c1, c2);
+      // L5: Materiais → só Materiais; Gases/Cilindros → os dois.
+      final gerados = consolidadosDoTipo(naturezaInv);
+      // B73: informativas já gravadas com c3_fora = true.
+      final linhas = marcarForaDaC3(
+          compararC1C2(c1, c2)
+              .where((l) => gerados.contains(l.natureza))
+              .toList(),
+          naturezaInv);
       final resumo = ResumoComparativo.de(linhas);
+      // C3 só é necessária se houver divergência do consolidado do tipo.
+      final paraC3 = divergenciasParaC3(linhas, naturezaInv);
 
       // 3) Apaga linhas antigas (refazer) e grava as novas, em lotes.
       final antigas = await _linhas(inventarioId)
@@ -201,11 +265,14 @@ class ComparativoRodadasService {
         'reconciliacao.concluida_em': FieldValue.serverTimestamp(),
         'reconciliacao.total_linhas': resumo.total,
         'reconciliacao.encerradas': resumo.encerradas,
-        'reconciliacao.em_analise': resumo.emAnalise,
-        'contagens.${Rodadas.c3}.status': resumo.emAnalise > 0
+        // L5: pendências = só as que vão para a C3. As do outro consolidado
+        // (ex.: Cilindros num inventário de Gases) são informativas.
+        'reconciliacao.em_analise': paraC3,
+        'reconciliacao.divergencias_informativas': resumo.emAnalise - paraC3,
+        'contagens.${Rodadas.c3}.status': paraC3 > 0
             ? StatusRodada.pendente
             : StatusRodada.naoNecessaria,
-        'contagens.${Rodadas.c3}.total_tarefas': resumo.emAnalise,
+        'contagens.${Rodadas.c3}.total_tarefas': paraC3,
       });
       AuditEventService.registrarNoBatch(
         fim,

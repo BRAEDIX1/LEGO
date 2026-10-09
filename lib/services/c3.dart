@@ -6,6 +6,7 @@
 // - decisão de aceitar/recusar uma sincronização (versão da atribuição).
 
 import 'dart:math';
+import 'package:lego/services/comparativo.dart';
 
 /// Estados da tarefa NO SERVIDOR (campo `c3_status` da linha do comparativo).
 class StatusTarefaC3 {
@@ -44,11 +45,21 @@ enum EstadoLocalC3 { atribuida, concluidaLocal, sincronizada, recusada }
 class TarefaC3Local {
   final String docId;
   final String chave;
-  final String tipo; // 'tag' | 'material'
+  final String tipo; // L3: natureza — 'material' | 'cilindro' | 'gas'
   final String? tag;
   final String codigo;
   final String? lote;
   final String descricao;
+  /// L1: local da linha de material (onde contar).
+  final String? localId;
+  final String? localNome;
+  /// L3: prateleira (material).
+  final String prateleira;
+  /// Gás: volume unitário (para o volume contado).
+  final double? volumeUnitario;
+  /// L1: TAG — locais onde a C1/C2 viram o cilindro (pista para achar;
+  /// não revela quantidades).
+  final List<String> locaisVistos;
   final int versao;
   final EstadoLocalC3 estado;
   final Map<String, dynamic>? resultado; // TotaisRodada.toMap()
@@ -63,6 +74,11 @@ class TarefaC3Local {
     required this.codigo,
     this.lote,
     this.descricao = '',
+    this.localId,
+    this.localNome,
+    this.prateleira = '',
+    this.volumeUnitario,
+    this.locaisVistos = const [],
     required this.versao,
     this.estado = EstadoLocalC3.atribuida,
     this.resultado,
@@ -84,6 +100,11 @@ class TarefaC3Local {
         codigo: codigo,
         lote: lote,
         descricao: descricao,
+        localId: localId,
+        localNome: localNome,
+        prateleira: prateleira,
+        volumeUnitario: volumeUnitario,
+        locaisVistos: locaisVistos,
         versao: versao,
         estado: estado ?? this.estado,
         resultado: resultado ?? this.resultado,
@@ -99,6 +120,11 @@ class TarefaC3Local {
         'codigo': codigo,
         'lote': lote,
         'descricao': descricao,
+        'localId': localId,
+        'localNome': localNome,
+        'prateleira': prateleira,
+        'volumeUnitario': volumeUnitario,
+        'locaisVistos': locaisVistos,
         'versao': versao,
         'estado': estado.name,
         'resultado': resultado,
@@ -114,6 +140,13 @@ class TarefaC3Local {
         codigo: (j['codigo'] ?? '') as String,
         lote: j['lote'] as String?,
         descricao: (j['descricao'] ?? '') as String,
+        localId: j['localId'] as String?,
+        localNome: j['localNome'] as String?,
+        prateleira: (j['prateleira'] ?? '') as String,
+        volumeUnitario: (j['volumeUnitario'] as num?)?.toDouble(),
+        locaisVistos: (j['locaisVistos'] is List)
+            ? (j['locaisVistos'] as List).map((e) => e.toString()).toList()
+            : const [],
         versao: (j['versao'] as num).toInt(),
         estado: EstadoLocalC3.values.firstWhere((e) => e.name == j['estado'],
             orElse: () => EstadoLocalC3.atribuida),
@@ -198,3 +231,88 @@ enum DecisaoSync { aceitar, recusar, aguardar }
   }
   return (DecisaoSync.aceitar, null);
 }
+
+/// Campos que a tela de lançamento da C3 libera (o resto vem travado).
+/// Djalma (09/10): Gases e Cilindros → só Cheio e Vazio; Materiais → só
+/// Quantidade. Lote nunca é editável na C3.
+enum CampoC3 { quantidade, cheioVazio }
+
+CampoC3 campoC3Para(String tipo) =>
+    tipo == 'material' ? CampoC3.quantidade : CampoC3.cheioVazio;
+
+/// Resultado da C3 a partir do lançamento (Enter). A métrica do consolidado
+/// vai em `quantidade` (é o que o comparativo compara):
+///   material → quantidade
+///   gas      → cheios (vazios ficam registrados, mas não contam); volume =
+///              cheios × volume unitário
+///   cilindro → cheios + vazios
+/// Só na C3 o lançamento 0 e 0 é aceito: vale "não encontrado".
+TotaisRodada resultadoC3(
+  String tipo, {
+  double quantidade = 0,
+  double cheio = 0,
+  double vazio = 0,
+  double? volumeUnitario,
+}) {
+  final double metrica;
+  switch (tipo) {
+    case 'gas':
+      metrica = cheio;
+    case 'cilindro':
+      metrica = cheio + vazio;
+    default:
+      metrica = quantidade;
+  }
+  final material = campoC3Para(tipo) == CampoC3.quantidade;
+  final zero = material ? quantidade == 0 : (cheio == 0 && vazio == 0);
+  return TotaisRodada(
+    quantidade: metrica,
+    cheio: material ? 0 : cheio,
+    vazio: material ? 0 : vazio,
+    ocorrencias: 1,
+    naoEncontrado: zero,
+    volume: tipo == 'gas' && volumeUnitario != null
+        ? cheio * volumeUnitario
+        : null,
+  );
+}
+
+/// Item 4: as tarefas C3 do aparelho só continuam válidas se forem do
+/// inventário ativo e a C3 dele ainda estiver aberta. Inventário encerrado,
+/// cancelado ou substituído, ou C3 encerrada/não necessária → descartar.
+bool tarefasLocaisAindaValidas({
+  required String inventarioLocal,
+  required String? inventarioAtivoId,
+  required String? statusC3Ativo,
+}) {
+  if (inventarioAtivoId == null || inventarioLocal != inventarioAtivoId) {
+    return false;
+  }
+  const abertos = {
+    'aguardando_participantes',
+    'distribuindo',
+    'em_andamento',
+    'redistribuindo',
+  };
+  return abertos.contains(statusC3Ativo);
+}
+
+/// Item 6: "Finalizar" só habilita com 100% de certeza: há tarefas e nenhuma
+/// está "a fazer" ou "concluída sem enviar". (Recusada = saiu da minha lista.)
+bool todasSincronizadas(List<TarefaC3Local> lista) =>
+    lista.isNotEmpty &&
+    lista.every((t) =>
+        t.estado == EstadoLocalC3.sincronizada ||
+        t.estado == EstadoLocalC3.recusada);
+
+/// B77: "0 de 0 = participação concluída", mas só com confirmação do
+/// servidor (C3 em andamento, eu congelado nela e nenhuma linha minha).
+bool podeFinalizarSemTarefas({
+  required String? statusC3,
+  required List<String> participantes,
+  required String uid,
+  required int atribuidasNoServidor,
+}) =>
+    statusC3 == 'em_andamento' &&
+    participantes.contains(uid) &&
+    atribuidasNoServidor == 0;

@@ -136,4 +136,88 @@ void main() {
       expect(r.$2, contains('versão'));
     });
   });
+
+  group('Item 4: tarefas C3 não ficam eternizadas no aparelho', () {
+    test('mesmo inventário com a C3 aberta → mantém', () {
+      for (final st in [
+        'aguardando_participantes',
+        'distribuindo',
+        'em_andamento',
+        'redistribuindo'
+      ]) {
+        expect(
+            tarefasLocaisAindaValidas(
+                inventarioLocal: 'A', inventarioAtivoId: 'A', statusC3Ativo: st),
+            isTrue);
+      }
+    });
+    test('C3 encerrada ou não necessária → descarta', () {
+      for (final st in ['encerrada', 'nao_necessaria', 'pendente', null]) {
+        expect(
+            tarefasLocaisAindaValidas(
+                inventarioLocal: 'A', inventarioAtivoId: 'A', statusC3Ativo: st),
+            isFalse);
+      }
+    });
+    test('outro inventário ativo ou nenhum → descarta', () {
+      expect(
+          tarefasLocaisAindaValidas(
+              inventarioLocal: 'A',
+              inventarioAtivoId: 'B',
+              statusC3Ativo: 'em_andamento'),
+          isFalse);
+      expect(
+          tarefasLocaisAindaValidas(
+              inventarioLocal: 'A',
+              inventarioAtivoId: null,
+              statusC3Ativo: null),
+          isFalse);
+    });
+  });
+
+  group('B77: participante com zero tarefas', () {
+    test('3 tarefas / 5 participantes → 2 com zero, e podem finalizar', () {
+      final uids = ['a', 'b', 'c', 'd', 'e'];
+      final d = distribuirTarefas(['t1', 't2', 't3'], uids);
+      final zero = [for (final u in uids) if ((d[u] ?? const []).isEmpty) u];
+      expect(zero.length, 2);
+      for (final u in zero) {
+        expect(
+            podeFinalizarSemTarefas(
+                statusC3: 'em_andamento',
+                participantes: uids,
+                uid: u,
+                atribuidasNoServidor: 0),
+            isTrue);
+      }
+    });
+    test('não finaliza "sem tarefas" se o servidor tem item meu', () {
+      expect(
+          podeFinalizarSemTarefas(
+              statusC3: 'em_andamento',
+              participantes: ['a'],
+              uid: 'a',
+              atribuidasNoServidor: 1),
+          isFalse);
+    });
+    test('não finaliza fora da C3 em andamento ou sem participar', () {
+      expect(
+          podeFinalizarSemTarefas(
+              statusC3: 'distribuindo',
+              participantes: ['a'],
+              uid: 'a',
+              atribuidasNoServidor: 0),
+          isFalse);
+      expect(
+          podeFinalizarSemTarefas(
+              statusC3: 'em_andamento',
+              participantes: ['b'],
+              uid: 'a',
+              atribuidasNoServidor: 0),
+          isFalse);
+    });
+    test('lista local vazia nunca habilita o "Finalizar" normal', () {
+      expect(todasSincronizadas(const []), isFalse);
+    });
+  });
 }

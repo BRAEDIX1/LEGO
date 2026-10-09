@@ -37,12 +37,15 @@ class ProntoC3 {
   final int concluidasLocais;
   final int sincronizadas;
   final DateTime? atualizadoEm;
+  /// Item 6: o operador tocou em "Finalizar minha C3" (tudo sincronizado).
+  final bool finalizado;
   const ProntoC3({
     required this.uid,
     required this.nome,
     this.concluidasLocais = 0,
     this.sincronizadas = 0,
     this.atualizadoEm,
+    this.finalizado = false,
   });
 
   static ProntoC3 deDoc(DocumentSnapshot<Map<String, dynamic>> d) {
@@ -54,6 +57,7 @@ class ProntoC3 {
       concluidasLocais: (m['concluidas_locais'] as num?)?.toInt() ?? 0,
       sincronizadas: (m['sincronizadas'] as num?)?.toInt() ?? 0,
       atualizadoEm: ts is Timestamp ? ts.toDate() : null,
+      finalizado: m['finalizado'] == true,
     );
   }
 }
@@ -94,8 +98,50 @@ class C3Service {
   // =====================================================================
 
   /// Comparativo pronto com linhas em análise → C3 "aguardando participantes".
-  Future<void> chamarParticipantes(String inventarioId) async {
+  /// L3: o analista escolhe UMA natureza (gás, cilindro ou material). Só as
+  /// divergências dela viram tarefas; as demais ficam `c3_fora` (sem C3).
+  Future<void> chamarParticipantes(
+      String inventarioId, Natureza natureza) async {
     final uid = _user().uid;
+    // 0) Só com a C3 pendente (não mexe nas linhas de uma C3 já aberta).
+    final invAtual = Inventario.fromFirestore(await _inv(inventarioId)
+        .get(const GetOptions(source: Source.server)));
+    final atual = invAtual.statusRodada(_c3);
+    if (atual != StatusRodada.pendente) {
+      throw OperacaoNaoPermitidaException('Chamar participantes', inventarioId,
+          'a C3 não está pendente (${StatusRodada.rotulo(atual)})');
+    }
+    // B75: inventário com tipo → a C3 só pode ser desse tipo.
+    final tipoInv = NaturezaRotulo.deNome(invAtual.naturezaContagem);
+    if (tipoInv != null && tipoInv != natureza) {
+      throw OperacaoNaoPermitidaException('Chamar participantes', inventarioId,
+          'o inventário é de ${tipoInv.rotulo}; a C3 não pode ser de '
+          '${natureza.rotulo}');
+    }
+    // 1) Marca as linhas (idempotente: pode repetir se falhar no meio).
+    final linhas = (await _linhas(inventarioId)
+            .get(const GetOptions(source: Source.server)))
+        .docs
+        .map((d) => LinhaComparativo.deMapa(d.data()))
+        .where((l) => l.emAnalise)
+        .toList();
+    if (!linhas.any((l) => l.natureza == natureza)) {
+      throw OperacaoNaoPermitidaException('Chamar participantes', inventarioId,
+          'não há divergências de ${natureza.rotulo}');
+    }
+    final ops = [
+      for (final l in linhas)
+        (WriteBatch b) => b.update(_linhas(inventarioId).doc(l.docId),
+            {'c3_fora': l.natureza != natureza}),
+    ];
+    for (var i = 0; i < ops.length; i += 400) {
+      final b = _fs.batch();
+      for (final op in ops.skip(i).take(400)) {
+        op(b);
+      }
+      await b.commit();
+    }
+    // 2) Abre a C3 com a natureza escolhida.
     await _fs.runTransaction<void>((tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
@@ -105,12 +151,16 @@ class C3Service {
       }
       tx.update(_inv(inventarioId), {
         'contagens.$_c3.status': StatusRodada.aguardandoParticipantes,
+        'contagens.$_c3.natureza': natureza.name,
+        'contagens.$_c3.total_tarefas':
+            linhas.where((l) => l.natureza == natureza).length,
       });
       AuditEventService.registrarNaTransacao(tx,
           inventarioId: inventarioId,
           tipo: TipoEvento.c3Liberada,
           uid: uid,
-          rodada: _c3);
+          rodada: _c3,
+          dados: {'natureza': natureza.name});
     });
   }
 
@@ -169,7 +219,10 @@ class C3Service {
   /// Com a trava, nenhuma sincronização entra no meio: ela espera.
   Future<Map<String, int>> redistribuirPendentes(String inventarioId) async {
     final uid = _user().uid;
-    final prontos = await _prontosServidor(inventarioId);
+    // B79: quem já finalizou a própria C3 não recebe tarefas novas.
+    final prontos = (await _prontosServidor(inventarioId))
+        .where((p) => !p.finalizado)
+        .toList();
     if (prontos.isEmpty) {
       throw OperacaoNaoPermitidaException(
           'Redistribuir', inventarioId, 'nenhum participante confirmado');
@@ -231,7 +284,7 @@ class C3Service {
             .get(const GetOptions(source: Source.server)))
         .docs
         .map((d) => LinhaComparativo.deMapa(d.data()))
-        .where((l) => l.emAnalise)
+        .where((l) => l.naC3) // L3: só a natureza escolhida
         .toList();
     final pendentes = todas
         .where((l) => l.c3Status != StatusTarefaC3.sincronizada)
@@ -280,12 +333,12 @@ class C3Service {
   /// Encerra a C3 só com 100% das tarefas sincronizadas (autoridade = servidor).
   Future<void> encerrarC3(String inventarioId) async {
     final uid = _user().uid;
-    final linhas = (await _linhas(inventarioId)
+    final todasLinhas = (await _linhas(inventarioId)
             .get(const GetOptions(source: Source.server)))
         .docs
         .map((d) => LinhaComparativo.deMapa(d.data()))
-        .where((l) => l.emAnalise)
         .toList();
+    final linhas = todasLinhas.where((l) => l.naC3).toList(); // L3
     final faltam =
         linhas.where((l) => l.c3Status != StatusTarefaC3.sincronizada).length;
     if (faltam > 0) {
@@ -299,19 +352,35 @@ class C3Service {
         throw OperacaoNaoPermitidaException(
             'Encerrar C3', inventarioId, 'a C3 não está em andamento');
       }
+      // B69: a C3 resolve SÓ o consolidado escolhido. Os outros ficam
+      // registrados como "C3 não selecionada" — nunca como recontados.
+      final escolhida =
+          NaturezaRotulo.deNome(inv.contagens[_c3]?.natureza);
+      final resumo = resumoPorNatureza(todasLinhas, escolhida);
+      final semC3 = todasLinhas.where((l) => l.semC3).length;
       tx.update(_inv(inventarioId), {
         'contagens.$_c3.status': StatusRodada.encerrada,
         'contagens.$_c3.finalizada_em': FieldValue.serverTimestamp(),
         'contagens.$_c3.encerrada_por': uid,
-        // A1: tudo resolvido; o inventário pode ser encerrado.
+        // Pendências da C3 escolhida: zero. O inventário segue o fluxo
+        // (decisão operacional); o que ficou fora está registrado abaixo.
         'reconciliacao.em_analise': 0,
+        'reconciliacao.c3_natureza': escolhida?.name,
+        'reconciliacao.sem_c3': semC3,
+        'reconciliacao.por_natureza': {
+          for (final e in resumo.entries) e.key.name: e.value.toMap(),
+        },
       });
       AuditEventService.registrarNaTransacao(tx,
           inventarioId: inventarioId,
           tipo: TipoEvento.c3Encerrada,
           uid: uid,
           rodada: _c3,
-          dados: {'tarefas': linhas.length});
+          dados: {
+            'tarefas': linhas.length,
+            'natureza': escolhida?.name,
+            'sem_c3': semC3,
+          });
     });
   }
 
@@ -330,10 +399,14 @@ class C3Service {
     }, SetOptions(merge: true));
   }
 
-  Future<bool> estouPronto(String inventarioId) async {
+  Future<bool> estouPronto(String inventarioId) async =>
+      (await meuStatusC3(inventarioId)).$1;
+
+  /// (pronto, finalizado) do usuário logado na C3 deste inventário.
+  Future<(bool, bool)> meuStatusC3(String inventarioId) async {
     final u = _user();
     final d = await _prontos(inventarioId).doc(u.uid).get();
-    return d.exists;
+    return (d.exists, d.data()?['finalizado'] == true);
   }
 
   // ---- armazenamento local (offline) ----
@@ -401,6 +474,29 @@ class C3Service {
         await prefs.remove(_chaveLocal(u.uid));
       });
 
+  /// Item 4 (Djalma, 09/10): a C3 não fica "eternizada" no login. Tarefas
+  /// guardadas no aparelho são descartadas quando o inventário delas não é
+  /// mais o ativo, ou quando a C3 dele já não está aberta. Chamar SÓ depois de
+  /// uma leitura bem-sucedida do servidor (offline não se decide nada).
+  /// Devolve true se descartou.
+  Future<bool> descartarLocalObsoleto({
+    required String? inventarioAtivoId,
+    required String? statusC3Ativo,
+  }) =>
+      _exclusivo(() async {
+        final (inv, _, _) = await _lerLocalSemFila();
+        if (inv == null) return false;
+        if (tarefasLocaisAindaValidas(
+            inventarioLocal: inv,
+            inventarioAtivoId: inventarioAtivoId,
+            statusC3Ativo: statusC3Ativo)) {
+          return false;
+        }
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.remove(_chaveLocal(_user().uid));
+        return true;
+      });
+
   /// Aplica [f] a UMA tarefa da lista mais recente (dentro da fila).
   Future<List<TarefaC3Local>> _atualizarTarefa(
       String docId, TarefaC3Local Function(TarefaC3Local) f) {
@@ -427,6 +523,11 @@ class C3Service {
               ? 'distribuição em andamento; tente em instantes'
               : 'a C3 não está em andamento (${StatusRodada.rotulo(st)})');
     }
+    // B76: quem já finalizou a própria C3 não baixa de novo.
+    if ((await meuStatusC3(inventarioId)).$2) {
+      throw OperacaoNaoPermitidaException('Baixar tarefas', inventarioId,
+          'você já finalizou a sua C3');
+    }
     final snap = await _linhas(inventarioId)
         .where('c3_responsavel_uid', isEqualTo: u.uid)
         .get(const GetOptions(source: Source.server));
@@ -438,11 +539,15 @@ class C3Service {
       doServidor.add(TarefaC3Local(
         docId: d.id,
         chave: l.chave,
-        tipo: l.tipo.name,
-        tag: l.tag,
-        codigo: l.codigo,
+        // L3: o tipo da tarefa é a natureza (material | cilindro | gas).
+        tipo: l.natureza.name,
+        codigo: l.natureza == Natureza.cilindro ? l.identificacao : l.codigo,
         lote: l.lote,
         descricao: l.descricao,
+        localId: l.localId,
+        localNome: l.localNome,
+        prateleira: l.prateleira,
+        volumeUnitario: l.volumeUnitario,
         versao: l.c3Versao ?? 1,
       ));
     }
@@ -552,6 +657,60 @@ class C3Service {
 
   /// Informa ao monitor quantas tarefas este aparelho já concluiu
   /// (melhor esforço; sem rede não faz nada).
+  /// Item 6: "Finalizar minha C3". Só com 100% das tarefas do aparelho
+  /// sincronizadas (o botão já fica desabilitado antes disso; aqui é a
+  /// garantia). Marca o participante como finalizado no servidor e só então
+  /// limpa o aparelho (item 4).
+  Future<void> finalizarMinhaC3() async {
+    final u = _user();
+    final (invId, _, lista) = await lerLocal();
+    if (invId == null) return;
+    if (!todasSincronizadas(lista)) {
+      throw OperacaoNaoPermitidaException('Finalizar C3', invId,
+          'ainda há tarefa(s) não sincronizada(s)');
+    }
+    await _prontos(invId).doc(u.uid).set({
+      'finalizado': true,
+      'finalizado_em': FieldValue.serverTimestamp(),
+      'sincronizadas':
+          lista.where((t) => t.estado == EstadoLocalC3.sincronizada).length,
+      'atualizado_em': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true)).timeout(const Duration(seconds: 15));
+    await limparLocal();
+  }
+
+  /// B77: participante congelado na C3 que recebeu ZERO tarefas. Só finaliza
+  /// se o servidor confirmar: C3 em andamento, eu entre os participantes e
+  /// nenhuma linha atribuída a mim (não confunde com "ainda não baixei").
+  Future<void> finalizarSemTarefas(String inventarioId) async {
+    final u = _user();
+    final inv = Inventario.fromFirestore(
+        await _inv(inventarioId).get(const GetOptions(source: Source.server)));
+    final atribuidas = (await _linhas(inventarioId)
+            .where('c3_responsavel_uid', isEqualTo: u.uid)
+            .get(const GetOptions(source: Source.server)))
+        .docs
+        .length;
+    if (!podeFinalizarSemTarefas(
+      statusC3: inv.statusRodada(_c3),
+      participantes: inv.contagens[_c3]?.usuarios ?? const [],
+      uid: u.uid,
+      atribuidasNoServidor: atribuidas,
+    )) {
+      throw OperacaoNaoPermitidaException('Finalizar C3', inventarioId,
+          atribuidas > 0
+              ? 'há $atribuidas item(ns) atribuídos a você'
+              : 'a C3 não está em andamento ou você não participa dela');
+    }
+    await _prontos(inventarioId).doc(u.uid).set({
+      'finalizado': true,
+      'finalizado_em': FieldValue.serverTimestamp(),
+      'sem_tarefas': true,
+      'atualizado_em': FieldValue.serverTimestamp(),
+    }, SetOptions(merge: true));
+    await limparLocal();
+  }
+
   Future<void> informarProgresso(
       String inventarioId, List<TarefaC3Local> lista) async {
     try {

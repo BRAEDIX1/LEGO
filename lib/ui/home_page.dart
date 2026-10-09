@@ -24,6 +24,9 @@ import 'package:lego/models/sessao_contagem.dart';
 import 'package:lego/services/compatibilidade_service.dart';
 import 'package:lego/services/mobile_sync_service.dart';
 import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';
+import 'package:lego/services/c3.dart'
+    show TarefaC3Local, resultadoC3, campoC3Para, CampoC3;
+import 'package:lego/services/c3_service.dart' show C3Service;
 
 // =====================================================================
 // FLUXO 2 (Lote 3A): helpers de sessão usados pelos widgets de topo
@@ -987,6 +990,8 @@ class _FormPane extends StatelessWidget {
     required this.vazioEnabled,
     required this.loteEnabled,
     this.soCodigo = false,
+    this.pratEnabled,
+    this.enterConfirma = false,
   });
 
   final GlobalKey<FormState> formKey;
@@ -1025,6 +1030,11 @@ class _FormPane extends StatelessWidget {
   // Quando true (aba Código do CT60), oculta o campo Tag duplicado e dá
   // foco inicial ao campo Código. Default false preserva o layout do tablet.
   final bool soCodigo;
+  /// C3 (item 6): prateleira travada mesmo com a quantidade liberada.
+  /// Null = segue [qtdPratEnabled] (comportamento de sempre).
+  final bool? pratEnabled;
+  /// C3: o Enter na Qtd (material) ou no Vazio (gás/cilindro) já grava.
+  final bool enterConfirma;
 
   InputDecoration _dec(
       BuildContext context, {
@@ -1184,7 +1194,7 @@ class _FormPane extends StatelessWidget {
                   decoration: _dec(context, label: 'Qtd', hint: '1,5'),
                   keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: true),
                   textInputAction: TextInputAction.next,
-                  onFieldSubmitted: (_) => enderecoFocus.requestFocus(),
+                  onFieldSubmitted: (_) => enterConfirma ? onConfirmar() : enderecoFocus.requestFocus(),
                   validator: qtdPratEnabled ? validarQuantidade : null,
                   style: const TextStyle(fontSize: 12),
                 ),
@@ -1194,7 +1204,7 @@ class _FormPane extends StatelessWidget {
                 child: TextFormField(
                   controller: enderecoCtrl,
                   focusNode: enderecoFocus,
-                  enabled: qtdPratEnabled,
+                  enabled: pratEnabled ?? qtdPratEnabled,
                   maxLength: 3,
                   decoration: _dec(context, label: 'Prat', hint: '6K9'),
                   textCapitalization: TextCapitalization.characters,
@@ -1242,7 +1252,8 @@ class _FormPane extends StatelessWidget {
                   decoration: _dec(context, label: 'Vazio'),
                   keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: false),
                   inputFormatters: [FilteringTextInputFormatter.digitsOnly],
-                  textInputAction: TextInputAction.next,
+                  textInputAction: enterConfirma ? TextInputAction.done : TextInputAction.next,
+                  onFieldSubmitted: enterConfirma ? (_) => onConfirmar() : null,
                   validator: vazioEnabled ? validarVazio : null,
                   style: const TextStyle(fontSize: 12),
                   buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
@@ -1379,7 +1390,7 @@ class _FormPane extends StatelessWidget {
         decoration: _dec(context, label: 'Qtd', hint: 'Ex.: 1,5'),
         keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: true),
         textInputAction: TextInputAction.next,
-        onFieldSubmitted: (_) => enderecoFocus.requestFocus(),
+        onFieldSubmitted: (_) => enterConfirma ? onConfirmar() : enderecoFocus.requestFocus(),
         validator: qtdPratEnabled ? validarQuantidade : null,
         style: const TextStyle(fontSize: 12),
       ),
@@ -1410,7 +1421,8 @@ class _FormPane extends StatelessWidget {
         maxLength: 4,
         decoration: _dec(context, label: 'Vazio'),
         keyboardType: const TextInputType.numberWithOptions(signed: false, decimal: true),
-        textInputAction: TextInputAction.next,
+        textInputAction: enterConfirma ? TextInputAction.done : TextInputAction.next,
+        onFieldSubmitted: enterConfirma ? (_) => onConfirmar() : null,
         validator: vazioEnabled ? validarVazio : null,
         style: const TextStyle(fontSize: 12),
         buildCounter: (context, {required currentLength, required isFocused, maxLength}) => null,
@@ -1451,7 +1463,7 @@ class _FormPane extends StatelessWidget {
       child: TextFormField(
         controller: enderecoCtrl,
         focusNode: enderecoFocus,
-        enabled: qtdPratEnabled,
+        enabled: pratEnabled ?? qtdPratEnabled,
         maxLength: 3,
         decoration: _dec(context, label: 'Prat', hint: 'Ex.: 6K9'),
         textCapitalization: TextCapitalization.characters,
@@ -3406,6 +3418,33 @@ class _HomePageState extends State<HomePage> {
 
   // ==================== FLUXO 2: SESSÃO (Lote 3A) ====================
 
+  // Item 6 (Djalma 09/10): "Finalizar minha contagem" só habilita com 100%
+  // dos lançamentos da rodada sincronizados. A fila local (Hive) é observada
+  // e a sincronização roda sozinha (serviço de conectividade).
+  StreamSubscription<List<LancLocal>>? _pendSub;
+  int _naoSincronizados = 0; // pendentes de envio
+  int _comErro = 0; // recusados pelo servidor: não somem sozinhos
+
+  void _observarPendentes() {
+    _pendSub?.cancel();
+    _pendSub = null;
+    final s = _sessao;
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (s == null || !s.isCompleta || uid == null) return;
+    _pendSub = LancamentosRepository(uid: uid)
+        .watchAllSorted(inventarioId: s.inventarioId, contagemId: s.rodada)
+        .listen((l) {
+      final n = l.where((x) => x.status == LancStatus.pending).length;
+      final e = l.where((x) => x.status == LancStatus.error).length;
+      if (mounted && (n != _naoSincronizados || e != _comErro)) {
+        setState(() {
+          _naoSincronizados = n;
+          _comErro = e;
+        });
+      }
+    });
+  }
+
   void _iniciarSessaoFluxo2() {
     final sync = MobileSyncService();
     _sessao = sync.sessaoAtual;
@@ -3415,6 +3454,7 @@ class _HomePageState extends State<HomePage> {
       WidgetsBinding.instance.addPostFrameCallback((_) => _irParaEscolha());
     } else {
       sync.informarPendentesLocais();
+      _observarPendentes();
     }
   }
 
@@ -3428,7 +3468,10 @@ class _HomePageState extends State<HomePage> {
         _sessao?.inventarioId != nova.inventarioId ||
         _sessao?.rodada != nova.rodada;
     setState(() => _sessao = nova);
-    if (mudouEscopo) _carregarCacheTags();
+    if (mudouEscopo) {
+      _carregarCacheTags();
+      _observarPendentes();
+    }
   }
 
   void _irParaEscolha() {
@@ -3465,6 +3508,20 @@ class _HomePageState extends State<HomePage> {
 
   /// Checagem rápida, sem contabilizar, antes de validar ou abrir diálogos.
   bool _podeGravarAgora() => !_fluxo2 || MobileSyncService().podeMutarAgora;
+
+  /// L4: o produto (coleção) cabe no tipo do inventário da sessão?
+  bool _origemPermitida(String? origem) =>
+      !_fluxo2 || (_sessao?.aceitaOrigem(origem) ?? true);
+
+  String _motivoOrigemBloqueada(String? origem) {
+    final tipo = SessaoContagem.rotuloNatureza(_sessao?.natureza);
+    final produto = origem == 'gases'
+        ? 'gás'
+        : origem == 'materiais'
+            ? 'material'
+            : 'produto sem cadastro';
+    return 'Inventário de $tipo: lançamento de $produto não permitido.';
+  }
 
   bool get _limpezaBloqueada {
     final s = _sessao;
@@ -3516,17 +3573,29 @@ class _HomePageState extends State<HomePage> {
     final s = _sessao;
     final finalizando = MobileSyncService().finalizacaoEmAndamento;
     if (s == null || !s.isCompleta || (!s.podeLancar && !finalizando)) return null;
+    // Item 6: só com 100% sincronizado.
+    final aguardando = _naoSincronizados > 0;
+    final bloqueadoErro = !aguardando && _comErro > 0;
+    final habilitado = !finalizando && !aguardando && !bloqueadoErro;
     return FloatingActionButton.extended(
-      onPressed: finalizando ? null : _finalizarContagem,
-      icon: finalizando
+      onPressed: habilitado ? _finalizarContagem : null,
+      icon: bloqueadoErro
+          ? const Icon(Icons.error_outline)
+          : finalizando || aguardando
           ? const SizedBox(
               width: 18,
               height: 18,
               child: CircularProgressIndicator(strokeWidth: 2),
             )
           : const Icon(Icons.check_circle),
-      label: Text(finalizando ? 'Finalizando...' : 'Finalizar minha contagem'),
-      backgroundColor: Colors.orange,
+      label: Text(finalizando
+          ? 'Finalizando...'
+          : aguardando
+              ? 'Sincronizando · faltam $_naoSincronizados'
+              : bloqueadoErro
+                  ? '$_comErro lançamento(s) com erro: corrija'
+                  : 'Finalizar minha contagem'),
+      backgroundColor: habilitado ? Colors.orange : Colors.grey,
     );
   }
 
@@ -3967,6 +4036,7 @@ class _HomePageState extends State<HomePage> {
     // H9: o listener do participante nunca era cancelado
     _participanteListener?.cancel();
     _sessaoSub?.cancel();
+    _pendSub?.cancel();
     _modoSub?.cancel();
     super.dispose();
   }
@@ -4151,6 +4221,12 @@ class _HomePageState extends State<HomePage> {
       if (produto.origem != 'gases') {
         await _alertarCodigoNaoEncontrado();
         _snack('O código lido não corresponde a um gás.', error: true);
+        return;
+      }
+      // L4: inventário de Materiais não aceita gás.
+      if (!_origemPermitida(produto.origem)) {
+        await _alertarCodigoNaoEncontrado();
+        _snack(_motivoOrigemBloqueada(produto.origem), error: true);
         return;
       }
 
@@ -4380,6 +4456,16 @@ class _HomePageState extends State<HomePage> {
       _snack(_motivoMutacaoBloqueada(), error: true);
       return false;
     }
+    // B71: produto sem cadastro não tem coleção confiável. Na Contagem
+    // Completa com tipo, não entra (na Simples continua permitido).
+    if (_fluxo2 && _sessao?.natureza != null) {
+      _snack(
+          'Produto sem cadastro não pode ser lançado num inventário de '
+          '${SessaoContagem.rotuloNatureza(_sessao?.natureza)}. '
+          'Avise o analista.',
+          error: true);
+      return false;
+    }
     final resultado = await showDialog<Map<String, dynamic>>(
       context: context,
       builder: (ctx) => _CadastroManualDialog(
@@ -4510,6 +4596,13 @@ class _HomePageState extends State<HomePage> {
             : 'Localização expirada. Confirme onde você está.',
         error: true,
       );
+      return;
+    }
+
+    // L4: o tipo do inventário define a coleção aceita.
+    if (!_origemPermitida(_colecaoEncontrada)) {
+      await _alertarCodigoNaoEncontrado();
+      _snack(_motivoOrigemBloqueada(_colecaoEncontrada), error: true);
       return;
     }
 
@@ -5137,20 +5230,35 @@ class _HomePageState extends State<HomePage> {
           IconButton(
             tooltip: 'Sair',
             onPressed: () async {
+              // B66: nenhuma etapa pode impedir o logout.
               if (_fluxo2) {
                 // B16: a sessão não sobrevive ao logout. O listener sai antes
                 // para não disputar a navegação com o /login.
-                await _sessaoSub?.cancel();
-                _sessaoSub = null;
-                await MobileSyncService().limparSessao();
+                try {
+                  await _sessaoSub?.cancel();
+                  _sessaoSub = null;
+                  await MobileSyncService().limparSessao();
+                } catch (e) {
+                  debugPrint('⚠️ Logout: limparSessao falhou: $e');
+                }
               }
               // B60: sair pelo AuthService fecha a caixa local do usuário.
               // Com FirebaseAuth.signOut() direto, a caixa ficava aberta e o
               // login seguinte do mesmo usuário, sem fechar o app, falhava com
               // HiveError "box ... is already open".
-              await AuthService().signOut();
+              try {
+                await AuthService().signOut();
+              } catch (e) {
+                debugPrint('⚠️ Logout: AuthService.signOut falhou: $e');
+              }
+              if (FirebaseAuth.instance.currentUser != null) {
+                try {
+                  await FirebaseAuth.instance.signOut();
+                } catch (_) {}
+              }
               if (mounted) {
-                Navigator.of(context).pushReplacementNamed('/login');
+                Navigator.of(context)
+                    .pushNamedAndRemoveUntil('/login', (_) => false);
               }
             },
             icon: const Icon(Icons.logout),
@@ -5870,4 +5978,258 @@ String _formatarInteiro(double valor) {
     return valor.toInt().toString();  // Remove .0
   }
   return valor.toString();  // Mantém decimal se houver
+}
+
+// =====================================================================
+// C3 (item 6, Djalma 09/10): lançamento de UM item divergente na MESMA tela
+// padrão das contagens (_FormPane). Tudo vem preenchido e travado (código,
+// descrição, lote, prateleira, localização da divergência); só ficam
+// editáveis Cheio e Vazio (Gases/Cilindros) ou Quantidade (Materiais).
+// O Enter grava e encerra o item. Só aqui 0 e 0 é aceito (= não encontrado).
+// Grava no aparelho (offline) e dispara a sincronização automática.
+// =====================================================================
+class LancamentoC3Page extends StatefulWidget {
+  final TarefaC3Local tarefa;
+  final String? cabecalho; // ex.: "Inventário 002 | Gases | C3"
+  const LancamentoC3Page({super.key, required this.tarefa, this.cabecalho});
+
+  @override
+  State<LancamentoC3Page> createState() => _LancamentoC3PageState();
+}
+
+class _LancamentoC3PageState extends State<LancamentoC3Page> {
+  final _formKey = GlobalKey<FormState>();
+  final _codigoCtrl = TextEditingController();
+  final _barrasCtrl = TextEditingController();
+  final _qtdCtrl = TextEditingController();
+  final _enderecoCtrl = TextEditingController();
+  final _cheioCtrl = TextEditingController();
+  final _vazioCtrl = TextEditingController();
+  final _loteCtrl = TextEditingController();
+  final _osCtrl = TextEditingController();
+  final _codigoFocus = FocusNode();
+  final _barrasFocus = FocusNode();
+  final _qtdFocus = FocusNode();
+  final _enderecoFocus = FocusNode();
+  final _cheioFocus = FocusNode();
+  final _vazioFocus = FocusNode();
+  final _loteFocus = FocusNode();
+  final _osFocus = FocusNode();
+  String? _unidade;
+  bool _gravando = false;
+
+  TarefaC3Local get t => widget.tarefa;
+  bool get _material => campoC3Para(t.tipo) == CampoC3.quantidade;
+  String get _local => t.localNome ?? t.localId ?? '';
+
+  @override
+  void initState() {
+    super.initState();
+    _codigoCtrl.text = t.codigo;
+    _loteCtrl.text = t.lote ?? '';
+    _enderecoCtrl.text = t.prateleira;
+    _carregarUnidade();
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      (_material ? _qtdFocus : _cheioFocus).requestFocus();
+    });
+  }
+
+  Future<void> _carregarUnidade() async {
+    try {
+      final p = await ProdutosRepository().getByCodigoPreferGases(t.codigo);
+      if (p != null && mounted) setState(() => _unidade = p.unidade);
+    } catch (_) {}
+  }
+
+  @override
+  void dispose() {
+    for (final c in [
+      _codigoCtrl, _barrasCtrl, _qtdCtrl, _enderecoCtrl,
+      _cheioCtrl, _vazioCtrl, _loteCtrl, _osCtrl,
+    ]) {
+      c.dispose();
+    }
+    for (final f in [
+      _codigoFocus, _barrasFocus, _qtdFocus, _enderecoFocus,
+      _cheioFocus, _vazioFocus, _loteFocus, _osFocus,
+    ]) {
+      f.dispose();
+    }
+    super.dispose();
+  }
+
+  double _num(TextEditingController c) =>
+      double.tryParse(c.text.trim().replaceAll(',', '.')) ?? 0.0;
+
+  /// Na C3, vazio e zero são aceitos; só número inválido ou negativo não.
+  String? _validarNumero(String? v) {
+    final s = (v ?? '').trim().replaceAll(',', '.');
+    if (s.isEmpty) return null;
+    final n = double.tryParse(s);
+    if (n == null || n < 0) return 'Inválido';
+    return null;
+  }
+
+  Future<void> _confirmar() async {
+    if (_gravando) return;
+    if (!(_formKey.currentState?.validate() ?? true)) return;
+    final cheio = _num(_cheioCtrl);
+    final vazio = _num(_vazioCtrl);
+    final qtd = _num(_qtdCtrl);
+    final zero = _material ? qtd == 0 : (cheio == 0 && vazio == 0);
+    if (zero) {
+      final ok = await showDialog<bool>(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text('Não encontrado?'),
+          content: Text('Confirmar ZERO para ${t.codigo}'
+              '${(t.lote ?? '').isNotEmpty ? ' · lote ${t.lote}' : ''} em $_local?'),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx, false),
+                child: const Text('Voltar')),
+            FilledButton(
+                onPressed: () => Navigator.pop(ctx, true),
+                child: const Text('Confirmar zero')),
+          ],
+        ),
+      );
+      if (ok != true) return;
+    }
+    setState(() => _gravando = true);
+    try {
+      final c3 = C3Service();
+      await c3.concluirLocal(
+        t,
+        resultadoC3(t.tipo,
+            quantidade: qtd,
+            cheio: cheio,
+            vazio: vazio,
+            volumeUnitario: t.volumeUnitario),
+      );
+      // Sincronização automática (single-flight; sem rede, fica no aparelho).
+      unawaited(c3.sincronizar().then((_) {}, onError: (_) {}));
+      if (mounted) Navigator.of(context).pop(true);
+    } catch (e) {
+      if (mounted) {
+        setState(() => _gravando = false);
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
+            content: Text('Erro ao gravar: $e'), backgroundColor: Colors.red));
+      }
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Lego - Lançamentos · C3',
+            style: TextStyle(fontSize: 16)),
+      ),
+      body: Column(
+        children: [
+          // Cabeçalho fixo, como nas outras contagens.
+          Container(
+            width: double.infinity,
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+            decoration: BoxDecoration(
+              color: Colors.deepPurple.withValues(alpha: 0.10),
+              border: const Border(
+                  bottom: BorderSide(color: Colors.deepPurple, width: 2)),
+            ),
+            child: Row(children: [
+              const Icon(Icons.fact_check, color: Colors.deepPurple, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(widget.cabecalho ?? 'Terceira contagem',
+                    style: const TextStyle(
+                        fontWeight: FontWeight.bold, fontSize: 14)),
+              ),
+            ]),
+          ),
+          // Localização da divergência: fixada, sem troca.
+          Padding(
+            padding: const EdgeInsets.all(8),
+            child: Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(
+                color: Colors.green.shade50,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: Colors.green, width: 2),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Row(children: [
+                    Icon(Icons.lock, color: Colors.green, size: 18),
+                    SizedBox(width: 6),
+                    Text('📍 Divergência em (fixada):',
+                        style: TextStyle(fontWeight: FontWeight.bold)),
+                  ]),
+                  const SizedBox(height: 4),
+                  Text(_local.isEmpty ? '—' : _local,
+                      style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.blue.shade900)),
+                  if (t.prateleira.isNotEmpty)
+                    Text('Prateleira ${t.prateleira}',
+                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                ],
+              ),
+            ),
+          ),
+          Expanded(
+            child: AbsorbPointer(
+              absorbing: _gravando,
+              child: Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 8),
+                child: _FormPane(
+                  formKey: _formKey,
+                  codigoCtrl: _codigoCtrl,
+                  barrasCtrl: _barrasCtrl,
+                  qtdCtrl: _qtdCtrl,
+                  enderecoCtrl: _enderecoCtrl,
+                  cheioCtrl: _cheioCtrl,
+                  vazioCtrl: _vazioCtrl,
+                  loteCtrl: _loteCtrl,
+                  ordemServicoCtrl: _osCtrl,
+                  codigoFocus: _codigoFocus,
+                  barrasFocus: _barrasFocus,
+                  qtdFocus: _qtdFocus,
+                  enderecoFocus: _enderecoFocus,
+                  cheioFocus: _cheioFocus,
+                  vazioFocus: _vazioFocus,
+                  loteFocus: _loteFocus,
+                  ordemServicoFocus: _osFocus,
+                  descricao: t.descricao,
+                  unidade: _unidade,
+                  onBuscar: () {},
+                  onBuscarBarras: () {},
+                  onConfirmar: _confirmar,
+                  validarCodigo: (_) => null,
+                  validarQuantidade: _validarNumero,
+                  validarEndereco: (_) => null,
+                  validarCheio: _validarNumero,
+                  validarVazio: _validarNumero,
+                  // Travado: código, TAG, lote, prateleira.
+                  codigoEnabled: false,
+                  barrasEnabled: false,
+                  loteEnabled: false,
+                  pratEnabled: false,
+                  enterConfirma: true,
+                  // Liberado conforme o tipo.
+                  qtdPratEnabled: _material,
+                  cheioEnabled: !_material,
+                  vazioEnabled: !_material,
+                ),
+              ),
+            ),
+          ),
+          if (_gravando) const LinearProgressIndicator(),
+        ],
+      ),
+    );
+  }
 }

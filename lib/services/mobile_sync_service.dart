@@ -396,7 +396,10 @@ class MobileSyncService {
   /// Contagem Completa (T16): cria ou entra no inventário ativo e na rodada
   /// escolhida. Exige conexão. Se a segunda etapa falhar, uma nova tentativa
   /// recebe o mesmo inventário (R7).
-  Future<SessaoContagem> entrarContagemCompleta(String rodada) async {
+  /// L4: [natureza] ('material' | 'cilindro' | 'gas') só é usada se o
+  /// inventário for criado agora; quem entra num ativo herda o tipo dele.
+  Future<SessaoContagem> entrarContagemCompleta(String rodada,
+      {String? natureza}) async {
     if (!Fluxo2Config.habilitado) {
       throw OperacaoNaoPermitidaException(
           'Entrar na Contagem Completa', '', 'fluxo 2 desabilitado nesta build');
@@ -409,7 +412,7 @@ class MobileSyncService {
     await CompatibilidadeService().verificarNoServidor(PlataformaCompat.mobile);
 
     final inv = await _inventarioService.criarOuEntrarInventarioCompleto(
-        origem: 'mobile');
+        origem: 'mobile', naturezaContagem: natureza);
     final entrada = await _inventarioService.entrarNaRodada(inv.id, rodada);
 
     await _pararMonitoramentoSessao();
@@ -421,6 +424,7 @@ class MobileSyncService {
       rodada: rodada,
       statusRodada: entrada.statusRodada,
       statusIndividual: entrada.statusIndividual,
+      natureza: inv.naturezaContagem,
     );
     _sessao = sessao;
     ultimoMotivoFimSessao = null;
