@@ -97,13 +97,16 @@ class ComparativoRodadasService {
 
   /// Documentos brutos da rodada (para a aba "Lançamentos" do relatório, com
   /// `createdAt` em DateTime local) e o resumo classificado (consolidados).
+  /// [doCache] = true: lê do cache local (custo zero). Só use quando há uma
+  /// escuta ativa nesta mesma consulta (o cache está em dia) — o painel do
+  /// desktop mantém uma.
   Future<(List<Map<String, dynamic>>, List<LancResumo>)> carregarRodadaCompleta(
-      String inventarioId, String rodada) async {
+      String inventarioId, String rodada, {bool doCache = false}) async {
     final snap = await _fs
         .collection('lancamentos')
         .where('inventarioId', isEqualTo: inventarioId)
         .where('contagemId', isEqualTo: rodada)
-        .get(const GetOptions(source: Source.server));
+        .get(GetOptions(source: doCache ? Source.cache : Source.server));
     final brutos = [
       for (final d in snap.docs)
         () {
@@ -117,6 +120,39 @@ class ComparativoRodadasService {
         brutos.map(LancResumo.deMapa).whereType<LancResumo>().toList();
     return (brutos, await _classificar(lancs));
   }
+
+  /// Contagem Simples (inventário e rodada vazios), em tempo real, no
+  /// período [inicio, fim). Índice: lancamentos (inventarioId ↑, createdAt ↓).
+  Stream<(List<Map<String, dynamic>>, List<LancResumo>)> streamSimples(
+      DateTime inicio, DateTime fim) {
+    return _fs
+        .collection('lancamentos')
+        .where('inventarioId', isEqualTo: '')
+        .where('createdAt', isGreaterThanOrEqualTo: Timestamp.fromDate(inicio))
+        .where('createdAt', isLessThan: Timestamp.fromDate(fim))
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .asyncMap((snap) async {
+      final brutos = [
+        for (final d in snap.docs)
+          () {
+            final m = <String, dynamic>{...d.data()};
+            final ts = m['createdAt'];
+            if (ts is Timestamp) m['createdAt'] = ts.toDate();
+            return m;
+          }(),
+      ];
+      final lancs =
+          brutos.map(LancResumo.deMapa).whereType<LancResumo>().toList();
+      return (brutos, await _classificar(lancs));
+    });
+  }
+
+  /// Reclassifica um subconjunto (filtro por operador) sem ir ao servidor.
+  Future<List<LancResumo>> classificarBrutos(
+      List<Map<String, dynamic>> brutos) =>
+      _classificar(
+          brutos.map(LancResumo.deMapa).whereType<LancResumo>().toList());
 
   /// L3: natureza pelo cadastro (coleção do produto: `gases` ou
   /// `materiais`), descrição e volume unitário do cadastro quando o

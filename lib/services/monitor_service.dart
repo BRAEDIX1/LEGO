@@ -59,7 +59,26 @@ class MonitorService {
       .snapshots()
       .map((s) => s.docs.map((d) => {...d.data(), 'uid': d.id}).toList());
 
-  /// Lançamentos de uma rodada já no servidor, por usuário.
+  /// Tempo real: lançamentos da rodada no servidor, por usuário. Escuta
+  /// (custo: a carga inicial e depois 1 leitura por lançamento novo), em vez
+  /// de reler tudo de tempos em tempos.
+  Stream<Map<String, int>> streamSincronizadosPorUsuario(
+          String inventarioId, String rodada) =>
+      _fs
+          .collection('lancamentos')
+          .where('inventarioId', isEqualTo: inventarioId)
+          .where('contagemId', isEqualTo: rodada)
+          .snapshots()
+          .map((s) {
+        final out = <String, int>{};
+        for (final d in s.docs) {
+          final uid = (d.data()['uid'] ?? '?').toString();
+          out[uid] = (out[uid] ?? 0) + 1;
+        }
+        return out;
+      });
+
+  /// Lançamentos de uma rodada já no servidor, por usuário (leitura única).
   Future<Map<String, int>> sincronizadosPorUsuario(
       String inventarioId, String rodada) async {
     final s = await _fs

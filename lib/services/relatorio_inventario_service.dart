@@ -18,8 +18,8 @@ class RelatorioInventarioService {
   final FirebaseFirestore _fs = FirebaseFirestore.instance;
   final ComparativoRodadasService _cmp = ComparativoRodadasService();
 
-  /// Gera o .xlsx e devolve o caminho do arquivo.
-  Future<String> exportar(String inventarioId) async {
+  /// Monta o .xlsx em memória: (nome sugerido do arquivo, bytes).
+  Future<(String, List<int>)> gerar(String inventarioId) async {
     final inv = Inventario.fromFirestore(await _fs
         .collection('inventarios')
         .doc(inventarioId)
@@ -43,15 +43,21 @@ class RelatorioInventarioService {
     final bytes = gerarXlsx(abas);
     if (bytes == null) throw Exception('não foi possível gerar o .xlsx');
 
+    String dd(int v) => v.toString().padLeft(2, '0');
+    final nome = 'LEGO_Inventario_${inv.numeroFormatado}_'
+        '${agora.year}${dd(agora.month)}${dd(agora.day)}_'
+        '${dd(agora.hour)}${dd(agora.minute)}.xlsx';
+    return (nome, bytes);
+  }
+
+  /// Celular: gera o .xlsx e grava no aparelho. Devolve o caminho.
+  Future<String> exportar(String inventarioId) async {
+    final (nome, bytes) = await gerar(inventarioId);
     Directory? dir;
     try {
       dir = await getExternalStorageDirectory();
     } catch (_) {} // só existe no Android
     dir ??= await getApplicationDocumentsDirectory();
-    String dd(int v) => v.toString().padLeft(2, '0');
-    final nome = 'LEGO_Inventario_${inv.numeroFormatado}_'
-        '${agora.year}${dd(agora.month)}${dd(agora.day)}_'
-        '${dd(agora.hour)}${dd(agora.minute)}.xlsx';
     final arq = File('${dir.path}/$nome');
     await arq.writeAsBytes(bytes, flush: true);
     return arq.path;

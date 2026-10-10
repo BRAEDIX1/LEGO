@@ -273,3 +273,30 @@ List<AbaRelatorio> montarRelatorio({
       ),
   ];
 }
+
+/// Contagem Simples (sem inventário): aba de lançamentos no formato do modelo
+/// e um consolidado por natureza que tiver linhas (Materiais por código +
+/// prateleira; Gases por código + lote + localização; Cilindros por código +
+/// localização — as mesmas chaves do Completo).
+List<AbaRelatorio> montarRelatorioSimples({
+  required String periodo,
+  required String filtro,
+  required DateTime geradoEm,
+  required List<Map<String, dynamic>> lancs,
+  required List<LancResumo> resumo,
+}) {
+  final fonte = 'Fonte: Firestore | Contagem Simples | $filtro | '
+      'Gerado em ${_dataHora(geradoEm)}';
+  return [
+    abaLancamentos(
+      nome: 'Lançamentos',
+      titulo: 'Relatório de Lançamentos LEGO — Contagem Simples · $periodo',
+      fonte: fonte,
+      lancs: lancs,
+    ),
+    for (final n in Natureza.values)
+      abaConsolidado(
+          nome: 'Consolidado ${n.rotulo}', natureza: n, lancs: resumo),
+  ].where((a) => a.nome == 'Lançamentos' || a.dados.isNotEmpty).toList();
+}
+

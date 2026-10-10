@@ -14,6 +14,8 @@ import 'package:lego/ui/desktop/screens/participantes_screen.dart';         // F
 import 'package:lego/ui/desktop/screens/relatorio_screen.dart';             // Fase 3
 import 'package:lego/ui/desktop/screens/historico_screen.dart';             // Fase 4
 import 'package:lego/ui/desktop/screens/comparativo_inventarios_screen.dart'; // Fase 6
+import 'package:lego/ui/desktop/screens/inventario_completo_screen.dart';   // Entrega 3 (fluxo 2)
+import 'package:lego/ui/desktop/screens/contagem_simples_screen.dart';     // Contagem Simples
 
 /// Dashboard principal do Desktop - integra todas as fases
 class DashboardDesktopScreen extends StatefulWidget {
@@ -31,8 +33,13 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
   bool _carregando = true;
   String? _erro;
 
-  // Navegação
+  // Navegação. 0 = Inventário Completo (fluxo 2, painel do analista);
+  // 1 = Contagem Simples; 2..7 = telas legadas (Painel, Controle,
+  // Participantes, Relatórios, Histórico, Comparativo).
   int _menuIndex = 0;
+  bool get _secaoCompleto => _menuIndex == 0;
+  bool get _secaoSimples => _menuIndex == 1;
+  bool get _secaoNova => _secaoCompleto || _secaoSimples;
 
   @override
   void initState() {
@@ -78,6 +85,16 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
             leading: _buildSidebarHeader(),
             trailing: _buildSidebarFooter(),
             destinations: const [
+              NavigationRailDestination(
+                icon: Icon(Icons.fact_check_outlined),
+                selectedIcon: Icon(Icons.fact_check),
+                label: Text('Inventário Completo'),
+              ),
+              NavigationRailDestination(
+                icon: Icon(Icons.playlist_add_check_outlined),
+                selectedIcon: Icon(Icons.playlist_add_check),
+                label: Text('Contagem Simples'),
+              ),
               NavigationRailDestination(
                 icon: Icon(Icons.dashboard_outlined),
                 selectedIcon: Icon(Icons.dashboard),
@@ -211,8 +228,10 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
           ),
           const SizedBox(width: 24),
 
-          // Inventário ativo
-          if (_inventarioAtivo != null) ...[
+          // Inventário ativo (legado; a seção Completo tem cabeçalho próprio)
+          if (_secaoNova)
+            const SizedBox.shrink()
+          else if (_inventarioAtivo != null) ...[
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
               decoration: BoxDecoration(
@@ -268,21 +287,23 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
 
           const Spacer(),
 
-          // Botão criar inventário
-          FilledButton.icon(
-            onPressed: _abrirCriarInventario,
-            icon: const Icon(Icons.add),
-            label: const Text('Novo Inventário'),
-          ),
+          // Botão criar inventário (legado). O Completo nasce no celular.
+          if (!_secaoNova) ...[
+            FilledButton.icon(
+              onPressed: _abrirCriarInventario,
+              icon: const Icon(Icons.add),
+              label: const Text('Novo Inventário'),
+            ),
 
-          const SizedBox(width: 8),
+            const SizedBox(width: 8),
 
-          // Botão atualizar
-          IconButton(
-            onPressed: _carregarInventarioAtivo,
-            icon: const Icon(Icons.refresh),
-            tooltip: 'Atualizar',
-          ),
+            // Botão atualizar
+            IconButton(
+              onPressed: _carregarInventarioAtivo,
+              icon: const Icon(Icons.refresh),
+              tooltip: 'Atualizar',
+            ),
+          ],
         ],
       ),
     );
@@ -290,34 +311,39 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
 
   String _getTituloSecao() {
     switch (_menuIndex) {
-      case 0: return 'Painel';
-      case 1: return 'Controle de Contagem';
-      case 2: return 'Participantes';
-      case 3: return 'Relatórios';
-      case 4: return 'Histórico';
-      case 5: return 'Comparativo';
+      case 0: return 'Inventário Completo';
+      case 1: return 'Contagem Simples';
+      case 2: return 'Painel';
+      case 3: return 'Controle de Contagem';
+      case 4: return 'Participantes';
+      case 5: return 'Relatórios';
+      case 6: return 'Histórico';
+      case 7: return 'Comparativo';
       default: return 'LEGO Inventário';
     }
   }
 
   Widget _buildConteudo() {
-    // Verifica se precisa de inventário ativo
-    if (_menuIndex <= 3 && _inventarioAtivo == null) {
+    if (_secaoCompleto) return const InventarioCompletoScreen();
+    if (_secaoSimples) return const ContagemSimplesScreen();
+
+    // Verifica se precisa de inventário ativo (telas legadas)
+    if (_menuIndex <= 5 && _inventarioAtivo == null) {
       return _buildSemInventario();
     }
 
     switch (_menuIndex) {
-      case 0:
-        return _buildPainel();
-      case 1:
-        return ControleContagemScreen(inventarioId: _inventarioAtivo!.id);
       case 2:
-        return ParticipantesScreen(inventarioId: _inventarioAtivo!.id);
+        return _buildPainel();
       case 3:
-        return RelatorioScreen(inventarioId: _inventarioAtivo!.id);
+        return ControleContagemScreen(inventarioId: _inventarioAtivo!.id);
       case 4:
-        return const HistoricoScreen();
+        return ParticipantesScreen(inventarioId: _inventarioAtivo!.id);
       case 5:
+        return RelatorioScreen(inventarioId: _inventarioAtivo!.id);
+      case 6:
+        return const HistoricoScreen();
+      case 7:
         return const ComparativoInventariosScreen();
       default:
         return const Center(child: Text('Seção não encontrada'));
@@ -351,7 +377,7 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
               ),
               const SizedBox(width: 16),
               OutlinedButton.icon(
-                onPressed: () => setState(() => _menuIndex = 4),
+                onPressed: () => setState(() => _menuIndex = 6),
                 icon: const Icon(Icons.history),
                 label: const Text('Ver Histórico'),
               ),
@@ -454,19 +480,19 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
                 'Controle de Contagem',
                 Icons.checklist,
                 Colors.blue,
-                () => setState(() => _menuIndex = 1),
+                () => setState(() => _menuIndex = 3),
               ),
               _buildBotaoAcao(
                 'Participantes',
                 Icons.people,
                 Colors.green,
-                () => setState(() => _menuIndex = 2),
+                () => setState(() => _menuIndex = 4),
               ),
               _buildBotaoAcao(
                 'Relatórios',
                 Icons.assessment,
                 Colors.orange,
-                () => setState(() => _menuIndex = 3),
+                () => setState(() => _menuIndex = 5),
               ),
               _buildBotaoAcao(
                 'Avançar Contagem',

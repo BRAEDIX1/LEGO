@@ -836,6 +836,21 @@ class InventarioService {
     }
   }
 
+  /// Desktop (painel do analista): Inventários Completos do fluxo 2 mais
+  /// recentes, ativos ou não, para escolher qual acompanhar ou rever.
+  /// Só `orderBy` de um campo (sem índice composto); o filtro é local.
+  Future<List<Inventario>> listarCompletosRecentes({int limite = 15}) async {
+    final snap = await _inventarios
+        .orderBy('data_inicio', descending: true)
+        .limit(60)
+        .get(const GetOptions(source: Source.server));
+    return snap.docs
+        .map(Inventario.fromFirestore)
+        .where((i) => i.isFluxoMaquinaEstados)
+        .take(limite)
+        .toList();
+  }
+
   /// Busca um inventário específico por ID
   Future<Inventario?> buscarInventarioPorId(String id) async {
     try {

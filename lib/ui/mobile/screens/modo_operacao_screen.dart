@@ -6,8 +6,8 @@ import 'package:firebase_core/firebase_core.dart' show FirebaseException;
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
-import 'package:lego/config/ambiente.dart';
 import 'package:lego/config/fluxo2_config.dart';
+import 'package:lego/services/analista_service.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/models/participante.dart';
 import 'package:lego/models/sessao_contagem.dart';
@@ -57,6 +57,13 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
   String? _erroCompleta; // falha ao consultar a Contagem Completa
   Inventario? _ativo;
   Participante? _eu;
+  /// Item 8: o monitor do analista só aparece para quem está na lista.
+  bool _souAnalista = false;
+
+  Future<void> _carregarAnalista() async {
+    final r = await AnalistaService().souAnalista();
+    if (mounted && r != _souAnalista) setState(() => _souAnalista = r);
+  }
 
   @override
   void dispose() {
@@ -87,9 +94,8 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
       _carregando = true;
       _erroCompleta = null;
     });
-    if (ambienteAtual == Ambiente.teste) {
-      await _carregarLocalC3(); // independe de internet
-    }
+    await _carregarLocalC3(); // independe de internet
+    _carregarAnalista();
     try {
       final inv = await _inventarioService.buscarInventarioCompletoAtivo(
           propagarErros: true);
@@ -104,14 +110,12 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
         _carregando = false;
       });
       // Item 4: leitura do servidor OK → C3 que já acabou sai do aparelho.
-      if (ambienteAtual == Ambiente.teste) {
-        final descartou = await _c3.descartarLocalObsoleto(
-          inventarioAtivoId: inv?.id,
-          statusC3Ativo: inv?.statusRodada(Rodadas.c3),
-        );
-        if (descartou) await _carregarLocalC3();
-      }
-      if (inv != null && ambienteAtual == Ambiente.teste) {
+      final descartou = await _c3.descartarLocalObsoleto(
+        inventarioAtivoId: inv?.id,
+        statusC3Ativo: inv?.statusRodada(Rodadas.c3),
+      );
+      if (descartou) await _carregarLocalC3();
+      if (inv != null) {
         _carregarProntoC3(inv);
       }
     } catch (e) {
@@ -356,7 +360,7 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
               ),
               const SizedBox(height: 16),
             ],
-            if (ambienteAtual == Ambiente.teste && _tarefasLocais > 0) ...[
+            if (_tarefasLocais > 0) ...[
               _cardTarefasLocais(),
               const SizedBox(height: 16),
             ],
@@ -434,8 +438,8 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
                   Expanded(child: _botaoRodada(Rodadas.c2)),
                 ],
               ),
-              // Entrega 1 (teste em campo): só no LEGO TESTE.
-              if (_ativo != null && ambienteAtual == Ambiente.teste) ...[
+              // C3 do operador (+ monitor, só para analista — item 8).
+              if (_ativo != null) ...[
                 const SizedBox(height: 16),
                 _buildPainelTeste(_ativo!),
               ],
@@ -447,8 +451,11 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
   }
 
   // ===================================================================
-  // ENTREGA 3 (TESTE): monitor do analista + C3 do operador.
-  // Visível só no ambiente de teste (lego-teste). Sem regra de perfil (R14).
+  // ENTREGA 3: C3 do operador + monitor do analista.
+  // Esta tela só existe com o fluxo 2 ligado (Fluxo2Config: em produção
+  // exige LEGO_FLUXO2 e LEGO_FLUXO2_PRODUCAO). O botão do monitor só aparece
+  // para quem está em `sistema/app_config.analistas` (item 8); as regras do
+  // Firestore barram as ações de quem não está.
   // As regras ficam nos serviços (monitor/comparativo/c3).
   // ===================================================================
 
@@ -538,14 +545,15 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     final euNaC3 = inv.contagens[Rodadas.c3]?.usuarios.contains(uid) ?? false;
 
     final filhos = <Widget>[
-      OutlinedButton.icon(
-        icon: const Icon(Icons.monitor_heart),
-        label: const Text('Abrir monitor do analista'),
-        onPressed: () => Navigator.of(context)
-            .push(MaterialPageRoute(
-                builder: (_) => MonitorScreen(inventarioId: inv.id)))
-            .then((_) => _carregar()),
-      ),
+      if (_souAnalista)
+        OutlinedButton.icon(
+          icon: const Icon(Icons.monitor_heart),
+          label: const Text('Abrir monitor do analista'),
+          onPressed: () => Navigator.of(context)
+              .push(MaterialPageRoute(
+                  builder: (_) => MonitorScreen(inventarioId: inv.id)))
+              .then((_) => _carregar()),
+        ),
     ];
 
     if (st == StatusRodada.aguardandoParticipantes ||
@@ -649,17 +657,20 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
       ]);
     }
 
+    // Operador sem nada da C3 para fazer agora: a caixa nem aparece.
+    if (filhos.isEmpty) return const SizedBox.shrink();
+
     return Container(
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        border: Border.all(color: Colors.red.shade200),
+        border: Border.all(color: Colors.deepPurple.shade200),
         borderRadius: BorderRadius.circular(8),
-        color: Colors.red.withValues(alpha: 0.04),
+        color: Colors.deepPurple.withValues(alpha: 0.04),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          Text('Ambiente de teste · C3: ${StatusRodada.rotulo(st)}',
+          Text('Terceira contagem (C3) · ${StatusRodada.rotulo(st)}',
               style: const TextStyle(fontWeight: FontWeight.bold)),
           const SizedBox(height: 8),
           ...filhos,
