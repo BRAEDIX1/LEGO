@@ -1,0 +1,324 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== OPERACIONAL (09/10/2026): analista e fluxo 2 =====
+    // Analista = e-mail em sistema/app_config.analistas (mesma lista que o app
+    // lê; e-mails em MINÚSCULAS). Lista ausente/vazia = ninguém.
+    function autenticado() {
+      return request.auth != null;
+    }
+    function analista() {
+      return request.auth != null
+        && request.auth.token.get('email', '').lower() in
+           get(/databases/$(database)/documents/sistema/app_config)
+             .data.get('analistas', []);
+    }
+    // Inventário do fluxo 2 (Contagem Completa). O legado segue as regras de
+    // antes, para não mexer no que já roda em produção.
+    function fluxo2(dados) {
+      return dados.get('fluxo_versao', 0) >= 2;
+    }
+    // Operador entrando na C1/C2: só pode se incluir em `usuarios` e passar a
+    // rodada de disponivel → em_andamento. Nada mais no documento.
+    function rodadaDoOperadorOk(k) {
+      let novo = request.resource.data.contagens.get(k, {});
+      let velho = resource.data.contagens.get(k, {});
+      let transicao = velho.get('status', null) == 'disponivel'
+                      && novo.get('status', null) == 'em_andamento';
+      let mudou = novo.diff(velho).affectedKeys();
+      return mudou.hasOnly(['usuarios', 'status', 'iniciada_em'])
+        // B84: ninguém sai da lista; só o próprio uid pode entrar.
+        && novo.get('usuarios', []).hasAll(velho.get('usuarios', []))
+        && novo.get('usuarios', []).toSet()
+             .difference(velho.get('usuarios', []).toSet())
+             .hasOnly([request.auth.uid])
+        && (novo.get('status', null) == velho.get('status', null) || transicao)
+        // B84: iniciada_em só na abertura real da rodada.
+        && (!mudou.hasAny(['iniciada_em']) || transicao);
+    }
+    function entradaDoOperador() {
+      let c = request.resource.data.contagens;
+      return request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['contagens'])
+        && c.diff(resource.data.contagens)
+             .affectedKeys().hasOnly(['contagem_1', 'contagem_2'])
+        && rodadaDoOperadorOk('contagem_1')
+        && rodadaDoOperadorOk('contagem_2')
+        // B84 (D4): o mesmo uid nunca nas duas rodadas-base.
+        && !(request.auth.uid in c.get('contagem_1', {}).get('usuarios', [])
+             && request.auth.uid in c.get('contagem_2', {}).get('usuarios', []));
+    }
+    // Operador sincronizando o resultado de UMA tarefa da C3 que é dele,
+    // e só com a C3 em andamento (B83: C3 encerrada = congelada).
+    function resultadoC3DoOperador(inventarioId) {
+      return resource.data.get('c3_responsavel_uid', null) == request.auth.uid
+        && request.resource.data.diff(resource.data).affectedKeys()
+             .hasOnly(['c3', 'c3_quem', 'c3_uid', 'c3_status',
+                       'c3_concluida_no_aparelho_em', 'c3_em'])
+        && request.resource.data.get('c3_uid', null) == request.auth.uid
+        && request.resource.data.get('c3_status', null) == 'sincronizada'
+        && get(/databases/$(database)/documents/inventarios/$(inventarioId))
+             .data.get('contagens', {}).get('contagem_3', {})
+             .get('status', null) == 'em_andamento';
+    }
+    // B82: lançamento de Contagem Completa (fluxo 2) só pode ser criado,
+    // alterado ou apagado com o inventário ativo e a SUA rodada (C1/C2) em
+    // andamento. Rodada encerrada = evidência congelada. Contagem Simples
+    // (inventarioId vazio) e legado seguem como antes.
+    function lancamentoGravavel(d) {
+      let invId = d.get('inventarioId', '');
+      // Simples: sem inventário. O caminho só é montado com id não vazio.
+      return invId == null || invId == ''
+        || lancamentoDoInventarioOk(invId, d.get('contagemId', ''));
+    }
+    function lancamentoDoInventarioOk(invId, rodada) {
+      let caminho = /databases/$(database)/documents/inventarios/$(invId);
+      return !exists(caminho)
+        || !fluxo2(get(caminho).data)
+        || (rodada in ['contagem_1', 'contagem_2']
+            && get(caminho).data.get('status', '') in
+                 ['emAndamento', 'em_andamento']
+            && get(caminho).data.get('contagens', {})
+                 .get(rodada, {})
+                 .get('status', null) == 'em_andamento'
+            // B86: só quem está NESTA rodada e ainda não finalizou a sua.
+            && request.auth.uid in get(caminho).data.get('contagens', {})
+                 .get(rodada, {}).get('usuarios', [])
+            && participacaoAberta(invId, rodada));
+    }
+    function participacaoAberta(invId, rodada) {
+      let p = /databases/$(database)/documents/inventarios/$(invId)/participantes/$(request.auth.uid);
+      let campo = rodada == 'contagem_1' ? 'status_c1' : 'status_c2';
+      return exists(p)
+        && get(p).data.get('rodada_base', null) == rodada
+        && get(p).data.get(campo, null) == 'em_andamento';
+    }
+    // B84: rodada_base do participante não muda depois de definida.
+    function rodadaBaseImutavel() {
+      return resource == null
+        || resource.data.get('rodada_base', null) == null
+        || request.resource.data.get('rodada_base', null)
+             == resource.data.rodada_base;
+    }
+    // ===== FIM OPERACIONAL (helpers) =====
+
+    // ⭐ CORRIGIDO: Permitir leitura sem auth (para verificar nickname)
+    match /users/{userId} {
+      allow read: if true;
+      allow create: if request.auth != null && request.auth.uid == userId;
+      allow update: if request.auth != null && request.auth.uid == userId;
+    }
+
+    match /materiais/{materialId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /gases/{gasId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /barras/{barId} {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+
+    match /estoque/{codigoItem} {
+      allow read: if request.auth != null;
+      allow write: if request.auth != null;
+    }
+
+    match /lancamentos/{lancamentoId} {
+      allow create: if request.auth != null
+                    && request.resource.data.uid == request.auth.uid
+                    && lancamentoGravavel(request.resource.data);
+      // Identidade imutável: dono, inventário e rodada não trocam (B82).
+      allow update: if request.auth != null
+                    && resource.data.uid == request.auth.uid
+                    && request.resource.data.uid == request.auth.uid
+                    && request.resource.data.get('inventarioId', '')
+                         == resource.data.get('inventarioId', '')
+                    && request.resource.data.get('contagemId', '')
+                         == resource.data.get('contagemId', '')
+                    && lancamentoGravavel(resource.data);
+      allow delete: if request.auth != null
+                    && resource.data.uid == request.auth.uid
+                    && lancamentoGravavel(resource.data);
+      allow read: if request.auth != null;
+    }
+
+    // ===== NOVO (B35 revisado): contador/trava SOMENTE da Contagem Completa =====
+    //
+    // Nesta homologação NÃO liberamos 'ultimo_inventario' do fluxo legado.
+    // Isso evita mudar silenciosamente a numeração antiga de 6 dígitos para 001.
+    //
+    // O fluxo 2 usa somente:
+    // - ultimo_inventario_completo
+    // - inventario_completo_ativo_id
+    // - atualizado_em
+    match /sistema/contadores {
+      allow read: if request.auth != null;
+
+      // Documento ainda inexistente: a primeira Contagem Completa pode criá-lo.
+      allow create: if request.auth != null
+                    && request.resource.data.keys().hasAll([
+                         'ultimo_inventario_completo',
+                         'inventario_completo_ativo_id',
+                         'atualizado_em'
+                       ])
+                    && request.resource.data.keys().hasOnly([
+                         'ultimo_inventario_completo',
+                         'inventario_completo_ativo_id',
+                         'atualizado_em'
+                       ])
+                    && request.resource.data.ultimo_inventario_completo is int
+                    && request.resource.data.ultimo_inventario_completo > 0
+                    && request.resource.data.inventario_completo_ativo_id is string
+                    && request.resource.data.inventario_completo_ativo_id.size() > 0
+                    && request.resource.data.atualizado_em == request.time;
+
+      // Documento já existente:
+      // A) criar/substituir o Inventário Completo ativo:
+      //    - primeira inicialização da sequência: número > 0;
+      //    - depois disso: incremento EXATAMENTE +1;
+      // B) liberar a trava ao encerrar/cancelar:
+      //    - contador não muda;
+      //    - trava passa para null.
+      allow update: if request.auth != null
+                    && request.resource.data.diff(resource.data)
+                         .affectedKeys().hasOnly([
+                           'ultimo_inventario_completo',
+                           'inventario_completo_ativo_id',
+                           'atualizado_em'
+                         ])
+                    && request.resource.data.atualizado_em == request.time
+                    && (
+                      (
+                        request.resource.data.inventario_completo_ativo_id is string
+                        && request.resource.data.inventario_completo_ativo_id.size() > 0
+                        // B85: só ocupa a trava se ela está livre ou órfã
+                        // (inventário apontado não existe ou não está ativo).
+                        && (
+                          resource.data.get('inventario_completo_ativo_id', null) == null
+                          || !exists(/databases/$(database)/documents/inventarios/$(resource.data.inventario_completo_ativo_id))
+                          || !(get(/databases/$(database)/documents/inventarios/$(resource.data.inventario_completo_ativo_id))
+                                 .data.get('status', '') in ['emAndamento', 'em_andamento', 'aguardando'])
+                        )
+                        && request.resource.data.ultimo_inventario_completo is int
+                        && request.resource.data.ultimo_inventario_completo > 0
+                        && (
+                          (
+                            !('ultimo_inventario_completo' in resource.data)
+                          )
+                          ||
+                          (
+                            resource.data.ultimo_inventario_completo is int
+                            && request.resource.data.ultimo_inventario_completo
+                               == resource.data.ultimo_inventario_completo + 1
+                          )
+                        )
+                      )
+                      ||
+                      (
+                        // Liberar a trava (encerrar/cancelar): só o analista.
+                        analista()
+                        && request.resource.data.inventario_completo_ativo_id == null
+                        && resource.data.inventario_completo_ativo_id is string
+                        && request.resource.data.get(
+                             'ultimo_inventario_completo', 0
+                           ) == resource.data.get(
+                             'ultimo_inventario_completo', 0
+                           )
+                      )
+                    );
+
+      allow delete: if false;
+    }
+    // ===== FIM NOVO =====
+
+    // ===== NOVO (Lote 3B, T31): política de compatibilidade (D11) =====
+    // Só leitura por usuário autenticado. Editado apenas pelo console.
+    // NÃO é sistema/versoes (B36) e não atualiza coleções.
+    match /sistema/app_config {
+      allow read: if request.auth != null;
+      allow write: if false;
+    }
+    // ===== FIM NOVO =====
+
+    match /inventarios/{inventarioId} {
+      allow read: if request.auth != null;
+      // O operador abre o Inventário Completo (Completa → tipo).
+      allow create: if request.auth != null;
+      // Fluxo 2: encerrar contagem, comparativo, C3, encerrar/cancelar
+      // inventário = analista. Operador: só entrar na C1/C2.
+      allow update: if autenticado()
+                    && (!fluxo2(resource.data)
+                        || analista()
+                        || entradaDoOperador());
+      allow delete: if autenticado()
+                    && (!fluxo2(resource.data) || analista());
+
+      match /contagens/{contagemId} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null;
+      }
+
+      // Fluxo 2: cada um grava o próprio participante; o analista, qualquer um.
+      match /participantes/{userId} {
+        allow read: if request.auth != null;
+        allow create, update: if autenticado()
+                     && ((request.auth.uid == userId && rodadaBaseImutavel())
+                         || analista()
+                         || !fluxo2(get(/databases/$(database)/documents/inventarios/$(inventarioId)).data));
+        allow delete: if autenticado()
+                     && (analista()
+                         || !fluxo2(get(/databases/$(database)/documents/inventarios/$(inventarioId)).data));
+      }
+
+      // ===== NOVO (B35 revisado): trilha de auditoria somente-inclusão =====
+      match /eventos/{eventoId} {
+        allow read: if request.auth != null;
+
+        allow create: if request.auth != null
+                      && request.resource.data.keys().hasAll([
+                           'tipo', 'ts', 'uid', 'rodada', 'dados'
+                         ])
+                      && request.resource.data.keys().hasOnly([
+                           'tipo', 'ts', 'uid', 'rodada', 'dados'
+                         ])
+                      && request.resource.data.uid == request.auth.uid
+                      && request.resource.data.tipo is string
+                      && request.resource.data.ts == request.time
+                      && (
+                           request.resource.data.rodada == null
+                           || request.resource.data.rodada is string
+                         )
+                      && request.resource.data.dados is map;
+
+        allow update, delete: if false;
+      }
+      // ===== FIM NOVO =====
+
+      // ===== Linhas do comparativo C1 x C2 (e tarefas da C3) =====
+      // Gerar/refazer/distribuir = analista. Operador: só o resultado da
+      // tarefa da C3 que está com ele.
+      match /comparativo/{linhaId} {
+        allow read: if request.auth != null;
+        allow create, delete: if analista();
+        allow update: if analista()
+                      || (autenticado() && resultadoC3DoOperador(inventarioId));
+      }
+      // ===== FIM comparativo =====
+
+      // ===== "Estou pronto" e progresso da C3 =====
+      // Cada operador grava só o próprio documento.
+      match /c3_participantes/{uid} {
+        allow read: if request.auth != null;
+        allow write: if request.auth != null && request.auth.uid == uid;
+      }
+      // ===== FIM ENTREGA 3 =====
+    }
+  }
+}
