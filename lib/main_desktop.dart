@@ -1,29 +1,189 @@
 // lib/main_desktop.dart
+//
+// D16/D16-1: o ambiente do desktop é fixado pelo PONTO DE ENTRADA:
+//   lib/main_desktop.dart        → produção (murilo-21h52m)
+//   lib/main_desktop_teste.dart  → teste (lego-teste)
+// Nenhum parâmetro de build decide; esquecer um define não muda o ambiente.
+// Os mesmos portões do celular rodam antes de qualquer login: opções
+// conferidas, Firebase iniciado, projeto/appId conferidos de novo.
+// No teste, uma faixa laranja fixa no topo de toda tela.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:lego/config/ambiente.dart';
 import 'firebase_options.dart';
+import 'firebase_options_teste.dart';
 
 // ⭐ Telas do Desktop (todas as fases)
 import 'package:lego/ui/desktop/screens/dashboard_desktop_screen.dart';
 import 'package:lego/services/compatibilidade_service.dart';
 
-void main() async {
+/// Ambiente deste executável, fixado pelo ponto de entrada.
+Ambiente _ambienteDesktop = Ambiente.producao;
+bool get _ehTeste => _ambienteDesktop == Ambiente.teste;
+
+/// Produção. O teste entra por lib/main_desktop_teste.dart.
+Future<void> main() => iniciarLegoDesktop(Ambiente.producao);
+
+Future<void> iniciarLegoDesktop(Ambiente ambiente) async {
   WidgetsFlutterBinding.ensureInitialized();
+  _ambienteDesktop = ambiente;
 
-  await Firebase.initializeApp(
-    options: DefaultFirebaseOptions.currentPlatform,
-  );
+  final bloqueio = await _inicializarFirebaseDesktop();
+  if (bloqueio != null) {
+    debugPrint('⛔ Desktop bloqueado: $bloqueio');
+    runApp(_DesktopBloqueado(bloqueio));
+    return;
+  }
 
-  // Configurar Firestore para Deskflutop
+  // Configurar Firestore para Desktop
   FirebaseFirestore.instance.settings = const Settings(
     persistenceEnabled: true,
     cacheSizeBytes: Settings.CACHE_SIZE_UNLIMITED,
   );
 
+  await _descartarSessaoDeOutroProjeto();
+
   runApp(const LegoDesktopApp());
+}
+
+String? _projetoIniciado;
+
+/// Devolve `null` quando tudo confere; senão, o motivo do bloqueio.
+Future<ResultadoPortao?> _inicializarFirebaseDesktop() async {
+  final amb = _ambienteDesktop;
+
+  final FirebaseOptions opcoes;
+  try {
+    opcoes = switch (amb) {
+      Ambiente.producao => DefaultFirebaseOptions.currentPlatform,
+      Ambiente.teste => TesteFirebaseOptions.currentPlatform,
+    };
+  } catch (e) {
+    return ResultadoPortao.bloqueado(
+        MotivoBloqueioInicial.configuracaoIncompleta, '$e');
+  }
+
+  final conferidas = portaoOpcoes(
+    ambiente: amb,
+    projectId: opcoes.projectId,
+    appId: opcoes.appId,
+    apiKey: opcoes.apiKey,
+    messagingSenderId: opcoes.messagingSenderId,
+    storageBucket: opcoes.storageBucket,
+    appIdExigido: appIdEsperadoDesktop(amb),
+  );
+  if (!conferidas.liberado) return conferidas;
+
+  try {
+    await Firebase.initializeApp(options: opcoes);
+  } catch (e) {
+    return ResultadoPortao.bloqueado(MotivoBloqueioInicial.firebaseFalhou, '$e');
+  }
+
+  final app = Firebase.app();
+  _projetoIniciado = app.options.projectId;
+  final pos = portaoPosFirebase(
+    ambiente: amb,
+    projectId: app.options.projectId,
+    appId: app.options.appId,
+    appIdExigido: appIdEsperadoDesktop(amb),
+  );
+  return pos.liberado ? null : pos;
+}
+
+/// D16: no Windows o login salvo pode ter vindo do OUTRO projeto (produção e
+/// teste no mesmo PC). Se o servidor recusar a sessão, sai e pede login.
+/// Sem internet não faz nada (o portão de compatibilidade já exige servidor).
+Future<void> _descartarSessaoDeOutroProjeto() async {
+  final user = FirebaseAuth.instance.currentUser;
+  if (user == null) return;
+  try {
+    await user.getIdToken(true).timeout(const Duration(seconds: 10));
+  } on FirebaseAuthException catch (e) {
+    if (e.code == 'network-request-failed') return;
+    debugPrint('🔑 Sessão salva recusada (${e.code}); saindo');
+    await FirebaseAuth.instance.signOut();
+  } catch (_) {
+    // timeout ou outro erro: segue; o login/portão tratam depois
+  }
+}
+
+/// Faixa fixa do ambiente de teste, acima de qualquer tela.
+Widget _comFaixaDeTeste(Widget? child) {
+  if (!_ehTeste) return child ?? const SizedBox.shrink();
+  return Column(
+    children: [
+      Material(
+        color: Colors.orange.shade700,
+        child: const SizedBox(
+          width: double.infinity,
+          child: Padding(
+            padding: EdgeInsets.symmetric(vertical: 4),
+            child: Text(
+              'LEGO TESTE · ambiente de teste (lego-teste) · não é produção',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                  color: Colors.white,
+                  fontWeight: FontWeight.bold,
+                  fontSize: 12),
+            ),
+          ),
+        ),
+      ),
+      Expanded(child: child ?? const SizedBox.shrink()),
+    ],
+  );
+}
+
+/// Tela única quando o desktop não confere com o ambiente (sem login).
+class _DesktopBloqueado extends StatelessWidget {
+  final ResultadoPortao resultado;
+  const _DesktopBloqueado(this.resultado);
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      debugShowCheckedModeBanner: false,
+      title: 'LEGO Desktop – bloqueado',
+      home: Scaffold(
+        backgroundColor: Colors.red.shade50,
+        body: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 560),
+            child: Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Icon(Icons.block, size: 56, color: Colors.red.shade700),
+                  const SizedBox(height: 16),
+                  const Text('Build desktop inconsistente',
+                      style:
+                          TextStyle(fontSize: 24, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 12),
+                  const Text('Este executável não confere com o ambiente para '
+                      'o qual foi gerado. Avise o responsável pelo LEGO.'),
+                  const SizedBox(height: 16),
+                  SelectableText(
+                    'Ambiente: ${_ambienteDesktop.name}\n'
+                    'Projeto: ${_projetoIniciado ?? "(Firebase não iniciado)"}\n'
+                    'Motivo: ${resultado.motivo?.name}\n'
+                    'Detalhe: ${resultado.detalhe}',
+                    style:
+                        const TextStyle(fontFamily: 'monospace', fontSize: 12),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
 }
 
 class LegoDesktopApp extends StatelessWidget {
@@ -32,11 +192,12 @@ class LegoDesktopApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
-      title: 'LEGO Inventário - Desktop',
+      title: _ehTeste ? 'LEGO TESTE - Desktop' : 'LEGO Inventário - Desktop',
       debugShowCheckedModeBanner: false,
+      builder: (context, child) => _comFaixaDeTeste(child),
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(
-          seedColor: Colors.blue,
+          seedColor: _ehTeste ? Colors.orange : Colors.blue,
           brightness: Brightness.light,
         ),
         useMaterial3: true,
@@ -278,7 +439,7 @@ class _LoginDesktopScreenState extends State<LoginDesktopScreen> {
                 const Icon(Icons.inventory, size: 64, color: Colors.blue),
                 const SizedBox(height: 16),
                 Text(
-                  'LEGO Inventário',
+                  _ehTeste ? 'LEGO TESTE' : 'LEGO Inventário',
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.headlineMedium?.copyWith(
                     fontWeight: FontWeight.bold,

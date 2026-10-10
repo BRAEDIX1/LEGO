@@ -7,7 +7,9 @@
 // pubspec). Nada mais decide o ambiente;
 // o resto do app lê [ambienteAtual].
 //
-// O desktop roda sem sabor: `appFlavor` nulo → produção.
+// O desktop não usa sabor (o `--flavor` não se aplica ao Windows): o ambiente
+// dele é fixado pelo ponto de entrada (D16-1): `main_desktop.dart` = produção,
+// `main_desktop_teste.dart` = teste. Nenhum parâmetro de build decide.
 //
 // As funções daqui são puras (sem Firebase nem Hive) e testáveis.
 
@@ -107,6 +109,17 @@ String appIdEsperado(Ambiente ambiente) => switch (ambiente) {
       Ambiente.teste => '1:155608278634:android:0aacb8e34d3f1f48e5cc13',
     };
 
+// ---------------------------------------------------------------------------
+// D16: DESKTOP (Windows). O ambiente vem do ponto de entrada (D16-1).
+// ---------------------------------------------------------------------------
+
+/// appId do app Windows/Web de cada projeto (fonte independente, como o B56).
+/// Teste: o app Web "LEGO Desktop Teste" do lego-teste (D16, 09/10/2026).
+String appIdEsperadoDesktop(Ambiente ambiente) => switch (ambiente) {
+      Ambiente.producao => '1:1082826789172:web:26bada18bdf591ca369561',
+      Ambiente.teste => '1:155608278634:web:6ebbd7c38e1e0a7ae5cc13',
+    };
+
 bool _ausenteOuPendente(String? v) =>
     v == null || v.isEmpty || v == valorNaoPreenchido;
 
@@ -124,8 +137,9 @@ ResultadoPortao portaoOpcoes({
   required String apiKey,
   required String messagingSenderId,
   required String? storageBucket,
+  String? appIdExigido, // D16: desktop passa appIdEsperadoDesktop
 }) {
-  final esperadoApp = appIdEsperado(ambiente);
+  final esperadoApp = appIdExigido ?? appIdEsperado(ambiente);
   final obrigatorios = [projectId, appId, apiKey, messagingSenderId];
   if (obrigatorios.any(_ausenteOuPendente) ||
       _ausenteOuPendente(esperadoApp) ||
@@ -160,6 +174,7 @@ ResultadoPortao portaoPosFirebase({
   required Ambiente ambiente,
   required String projectId,
   required String appId,
+  String? appIdExigido, // D16: desktop passa appIdEsperadoDesktop
 }) {
   final projeto = projetoEsperado(ambiente);
   if (projectId != projeto) {
@@ -169,7 +184,7 @@ ResultadoPortao portaoPosFirebase({
       'o Firebase iniciou em $projectId',
     );
   }
-  final esperadoApp = appIdEsperado(ambiente);
+  final esperadoApp = appIdExigido ?? appIdEsperado(ambiente);
   if (appId != esperadoApp) {
     return ResultadoPortao.bloqueado(
       MotivoBloqueioInicial.appIdDivergente,

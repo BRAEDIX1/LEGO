@@ -250,4 +250,92 @@ void main() {
           isFalse);
     });
   });
+
+  group('D16: portões do desktop (ambiente fixado pelo ponto de entrada)', () {
+    const appWinProd = '1:1082826789172:web:26bada18bdf591ca369561';
+    const appWinTeste = '1:155608278634:web:6ebbd7c38e1e0a7ae5cc13';
+
+    ResultadoPortao opcoesDesk(
+      Ambiente amb, {
+      required String projectId,
+      required String appId,
+      String apiKey = 'AIza',
+      String? storageBucket,
+    }) =>
+        portaoOpcoes(
+          ambiente: amb,
+          projectId: projectId,
+          appId: appId,
+          apiKey: apiKey,
+          messagingSenderId: '1',
+          storageBucket: storageBucket,
+          appIdExigido: appIdEsperadoDesktop(amb),
+        );
+
+    test('appIds desktop: produção = app Windows do murilo; teste = app Web do lego-teste', () {
+      expect(appIdEsperadoDesktop(Ambiente.producao), appWinProd);
+      expect(appIdEsperadoDesktop(Ambiente.teste), appWinTeste);
+    });
+    test('produção + murilo + appId Windows certo → liberado', () {
+      expect(opcoesDesk(Ambiente.producao, projectId: _murilo, appId: appWinProd)
+          .liberado, isTrue);
+    });
+    test('produção + appId Android → appIdDivergente', () {
+      expect(opcoesDesk(Ambiente.producao, projectId: _murilo, appId: _appProd)
+          .motivo, MotivoBloqueioInicial.appIdDivergente);
+    });
+    test('teste + lego-teste + appId real do desktop teste → liberado', () {
+      expect(opcoesDesk(Ambiente.teste, projectId: _teste, appId: appWinTeste)
+          .liberado, isTrue);
+    });
+    test('teste + murilo → projetoDivergente', () {
+      expect(opcoesDesk(Ambiente.teste, projectId: _murilo, appId: appWinTeste)
+          .motivo, MotivoBloqueioInicial.projetoDivergente);
+    });
+    test('teste + appId errado (Android do teste ou Windows da prod) → appIdDivergente', () {
+      expect(opcoesDesk(Ambiente.teste, projectId: _teste, appId: _appTeste)
+          .motivo, MotivoBloqueioInicial.appIdDivergente);
+      expect(opcoesDesk(Ambiente.teste, projectId: _teste, appId: appWinProd)
+          .motivo, MotivoBloqueioInicial.appIdDivergente);
+    });
+    test('opção com PREENCHER esquecido → configuração incompleta', () {
+      expect(
+          opcoesDesk(Ambiente.teste,
+                  projectId: _teste,
+                  appId: appWinTeste,
+                  apiKey: valorNaoPreenchido)
+              .motivo,
+          MotivoBloqueioInicial.configuracaoIncompleta);
+    });
+    test('pós-Firebase: teste iniciado no lego-teste com o appId real → liberado', () {
+      expect(
+          portaoPosFirebase(
+                  ambiente: Ambiente.teste,
+                  projectId: _teste,
+                  appId: appWinTeste,
+                  appIdExigido: appIdEsperadoDesktop(Ambiente.teste))
+              .liberado,
+          isTrue);
+    });
+    test('pós-Firebase: teste iniciado no murilo → bloqueado', () {
+      expect(
+          portaoPosFirebase(
+                  ambiente: Ambiente.teste,
+                  projectId: _murilo,
+                  appId: appWinProd,
+                  appIdExigido: appIdEsperadoDesktop(Ambiente.teste))
+              .motivo,
+          MotivoBloqueioInicial.projetoDivergente);
+    });
+    test('pós-Firebase: produção certa → liberado', () {
+      expect(
+          portaoPosFirebase(
+                  ambiente: Ambiente.producao,
+                  projectId: _murilo,
+                  appId: appWinProd,
+                  appIdExigido: appIdEsperadoDesktop(Ambiente.producao))
+              .liberado,
+          isTrue);
+    });
+  });
 }
