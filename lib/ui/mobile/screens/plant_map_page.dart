@@ -17,6 +17,9 @@
 //       _localizacaoNome = area.nome;
 //     });
 //   }
+//
+// C3 (só visualizar): PlantMapPage(jsonAsset: ..., destaqueAreaId: id)
+//   abre com zoom na área e um alfinete vermelho no centro dela, sem seleção.
 
 import 'dart:convert';
 import 'dart:math';
@@ -98,10 +101,14 @@ class PlantLayout {
 
 class PlantMapPage extends StatefulWidget {
   final String jsonAsset;
+  /// C3: área da divergência. Com ela, o mapa só mostra (não seleciona):
+  /// abre com zoom na área e um alfinete vermelho no centro.
+  final String? destaqueAreaId;
 
   const PlantMapPage({
     super.key,
     required this.jsonAsset,
+    this.destaqueAreaId,
   });
 
   @override
@@ -113,6 +120,12 @@ class _PlantMapPageState extends State<PlantMapPage>
   PlantLayout? _layout;
   PlantArea?   _selected;
   bool _loading = true;
+
+  /// C3: área com o alfinete (null = modo seleção normal).
+  PlantArea? _destaque;
+  bool _zoomInicialFeito = false;
+  Size? _tamanhoMapa; // área do mapa (sem a barra), para re-centralizar
+  bool get _soVisualizar => widget.destaqueAreaId != null;
 
   // Scale atual do InteractiveViewer (para decidir visibilidade dos labels)
   double _currentScale = 1.0;
@@ -163,12 +176,25 @@ class _PlantMapPageState extends State<PlantMapPage>
     try {
       final raw  = await rootBundle.loadString(widget.jsonAsset);
       final json = jsonDecode(raw) as Map<String, dynamic>;
+      final layout = PlantLayout.fromJson(json);
+      PlantArea? destaque;
+      final alvo = widget.destaqueAreaId?.trim();
+      if (alvo != null && alvo.isNotEmpty) {
+        for (final a in layout.areas) {
+          if (a.id == alvo) {
+            destaque = a;
+            break;
+          }
+        }
+      }
+      if (!mounted) return;
       setState(() {
-        _layout  = PlantLayout.fromJson(json);
-        _loading = false;
+        _layout   = layout;
+        _destaque = destaque;
+        _loading  = false;
       });
     } catch (e) {
-      setState(() => _loading = false);
+      if (mounted) setState(() => _loading = false);
       debugPrint('PlantMapPage: erro ao carregar JSON – $e');
     }
   }
@@ -264,11 +290,22 @@ class _PlantMapPageState extends State<PlantMapPage>
         backgroundColor: const Color(0xFF16213E),
         foregroundColor: Colors.white,
         title: Text(
-          _layout!.plantaId.replaceAll('_', ' '),
+          _soVisualizar
+              ? 'Divergência: ${(_destaque?.nome ?? widget.destaqueAreaId!).replaceAll('_', ' ')}'
+              : _layout!.plantaId.replaceAll('_', ' '),
           style: const TextStyle(fontSize: 15, color: Colors.white70),
         ),
         actions: [
-          if (_selected != null) ...[
+          if (_soVisualizar && _destaque != null)
+            IconButton(
+              icon: const Icon(Icons.place, color: Colors.redAccent),
+              tooltip: 'Voltar ao alfinete',
+              onPressed: () {
+                final t = _tamanhoMapa;
+                if (t != null) _zoomToArea(_destaque!, t);
+              },
+            ),
+          if (!_soVisualizar && _selected != null) ...[
             // Botão confirmar
             TextButton.icon(
               icon: const Icon(Icons.check_circle, color: Color(0xFF00D4AA)),
@@ -302,6 +339,13 @@ class _PlantMapPageState extends State<PlantMapPage>
       body: LayoutBuilder(
         builder: (context, constraints) {
           final widgetSize = Size(constraints.maxWidth, constraints.maxHeight);
+          _tamanhoMapa = widgetSize;
+          if (_destaque != null && !_zoomInicialFeito) {
+            _zoomInicialFeito = true;
+            WidgetsBinding.instance.addPostFrameCallback((_) {
+              if (mounted) _zoomToArea(_destaque!, widgetSize);
+            });
+          }
           return Stack(
             children: [
               // InteractiveViewer com imagem + overlays
@@ -325,8 +369,9 @@ class _PlantMapPageState extends State<PlantMapPage>
                         child: CustomPaint(
                           painter: _AreaOverlayPainter(
                             layout:       _layout!,
-                            selected:     _selected,
+                            selected:     _soVisualizar ? _destaque : _selected,
                             currentScale: _currentScale,
+                            alfinete:     _destaque,
                           ),
                         ),
                       ),
@@ -338,6 +383,7 @@ class _PlantMapPageState extends State<PlantMapPage>
               GestureDetector(
                 behavior: HitTestBehavior.translucent,
                 onTapUp: (details) {
+                  if (_soVisualizar) return; // C3: só mostra
                   final area = _hitTest(details.localPosition, widgetSize);
                   if (area != null) {
                     setState(() => _selected = area);
@@ -354,7 +400,12 @@ class _PlantMapPageState extends State<PlantMapPage>
         },
       ),
       // Barra inferior com área selecionada
-      bottomNavigationBar: _selected == null ? null : _SelectedAreaBar(area: _selected!),
+      bottomNavigationBar: _soVisualizar
+          ? _BarraDivergencia(
+              areaId: widget.destaqueAreaId!, area: _destaque)
+          : _selected == null
+              ? null
+              : _SelectedAreaBar(area: _selected!),
     );
   }
 }
@@ -367,6 +418,8 @@ class _AreaOverlayPainter extends CustomPainter {
   final PlantLayout layout;
   final PlantArea?  selected;
   final double      currentScale;
+  /// C3: alfinete vermelho no centro desta área.
+  final PlantArea?  alfinete;
 
   // Tamanho mínimo da área em pixels na tela para mostrar label
   // Ex: área de 80x80px visíveis antes de mostrar o texto
@@ -376,6 +429,7 @@ class _AreaOverlayPainter extends CustomPainter {
     required this.layout,
     required this.currentScale,
     this.selected,
+    this.alfinete,
   });
 
   @override
@@ -456,11 +510,53 @@ class _AreaOverlayPainter extends CustomPainter {
         );
       }
     }
+
+    final pin = alfinete;
+    if (pin != null) {
+      final rect = pin.toRect(imageSize).translate(left, top);
+      _pintarAlfinete(canvas, rect.center);
+    }
+  }
+
+  /// Alfinete vermelho com a ponta no ponto [p]. O tamanho é compensado
+  /// pelo zoom, para ficar sempre do mesmo tamanho na tela.
+  void _pintarAlfinete(Canvas canvas, Offset p) {
+    final k = 1 / currentScale;
+    final r = 11.0 * k;          // raio da cabeça
+    final altura = 30.0 * k;     // da ponta ao centro da cabeça... + raio
+    final cabeca = Offset(p.dx, p.dy - altura + r);
+
+    // sombra
+    canvas.drawOval(
+      Rect.fromCenter(center: p, width: 14 * k, height: 5 * k),
+      Paint()..color = Colors.black.withOpacity(0.45),
+    );
+    // corpo (gota)
+    final corpo = Path()
+      ..moveTo(p.dx, p.dy)
+      ..lineTo(cabeca.dx - r * 0.82, cabeca.dy + r * 0.55)
+      ..arcToPoint(
+        Offset(cabeca.dx + r * 0.82, cabeca.dy + r * 0.55),
+        radius: Radius.circular(r),
+        largeArc: true,
+      )
+      ..close();
+    canvas.drawPath(corpo, Paint()..color = const Color(0xFFE53935));
+    canvas.drawPath(
+      corpo,
+      Paint()
+        ..color = Colors.white
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 1.6 * k,
+    );
+    // miolo
+    canvas.drawCircle(cabeca, r * 0.38, Paint()..color = Colors.white);
   }
 
   @override
   bool shouldRepaint(_AreaOverlayPainter old) =>
       old.selected?.id != selected?.id ||
+      old.alfinete?.id != alfinete?.id ||
       (old.currentScale - currentScale).abs() > 0.05;
 }
 
@@ -510,3 +606,40 @@ class _SelectedAreaBar extends StatelessWidget {
     );
   }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// BARRA INFERIOR — C3 (só visualizar)
+// ─────────────────────────────────────────────────────────────────────────────
+
+class _BarraDivergencia extends StatelessWidget {
+  final String areaId;
+  final PlantArea? area;
+  const _BarraDivergencia({required this.areaId, required this.area});
+
+  @override
+  Widget build(BuildContext context) {
+    final noMapa = area != null;
+    return Container(
+      color: const Color(0xFF16213E),
+      padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+      child: Row(
+        children: [
+          Icon(noMapa ? Icons.place : Icons.location_off,
+              color: noMapa ? Colors.redAccent : Colors.orangeAccent, size: 22),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Text(
+              noMapa
+                  ? 'Divergência em ${area!.nome.replaceAll('_', ' ')}'
+                  : 'A área "${areaId.replaceAll('_', ' ')}" ainda não está '
+                      'desenhada no mapa.',
+              style: const TextStyle(
+                  color: Colors.white, fontSize: 14, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+

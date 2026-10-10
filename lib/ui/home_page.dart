@@ -992,6 +992,7 @@ class _FormPane extends StatelessWidget {
     this.soCodigo = false,
     this.pratEnabled,
     this.enterConfirma = false,
+    this.osEnabled = true,
   });
 
   final GlobalKey<FormState> formKey;
@@ -1035,6 +1036,8 @@ class _FormPane extends StatelessWidget {
   final bool? pratEnabled;
   /// C3: o Enter na Qtd (material) ou no Vazio (gás/cilindro) já grava.
   final bool enterConfirma;
+  /// C3: OS travada (a divergência não leva ordem de serviço).
+  final bool osEnabled;
 
   InputDecoration _dec(
       BuildContext context, {
@@ -1280,6 +1283,7 @@ class _FormPane extends StatelessWidget {
               child: TextFormField(
                 controller: ordemServicoCtrl,
                 focusNode: ordemServicoFocus,
+                enabled: osEnabled,
                 maxLength: 10,
                 decoration: _dec(context, label: 'OS'),
                 textCapitalization: TextCapitalization.characters,
@@ -1448,6 +1452,7 @@ class _FormPane extends StatelessWidget {
       child: TextFormField(
         controller: ordemServicoCtrl,
         focusNode: ordemServicoFocus,
+        enabled: osEnabled,
         maxLength: 10,
         decoration: _dec(context, label: 'OS'),
         textCapitalization: TextCapitalization.characters,
@@ -5981,12 +5986,19 @@ String _formatarInteiro(double valor) {
 }
 
 // =====================================================================
-// C3 (item 6, Djalma 09/10): lançamento de UM item divergente na MESMA tela
-// padrão das contagens (_FormPane). Tudo vem preenchido e travado (código,
-// descrição, lote, prateleira, localização da divergência); só ficam
-// editáveis Cheio e Vazio (Gases/Cilindros) ou Quantidade (Materiais).
-// O Enter grava e encerra o item. Só aqui 0 e 0 é aceito (= não encontrado).
-// Grava no aparelho (offline) e dispara a sincronização automática.
+// C3: lançamento de UM item divergente, no layout padrão das contagens.
+// Tudo travado (código, descrição, lote, prateleira, localização e OS).
+// Gás/cilindro: duas abas, como na C1/C2 —
+//   TAG: leitura sequencial; cada TAG válida = 1 cilindro cheio. Só conta
+//        TAG do código divergente (e, na divergência de gás, do mesmo lote);
+//        as demais são descartadas com o alerta sonoro. TAG repetida no item
+//        também é descartada.
+//   Código: cheio/vazio digitados (vazios e contagem à mão).
+//   Resultado: cheios = TAGs lidas + cheios digitados; vazios = digitados.
+// Material: só a quantidade.
+// "Concluir item" (ou Enter no último campo) grava e encerra. Só na C3 o
+// zero é aceito (= não encontrado), com confirmação. Grava no aparelho
+// (offline) e dispara a sincronização automática.
 // =====================================================================
 class LancamentoC3Page extends StatefulWidget {
   final TarefaC3Local tarefa;
@@ -6007,6 +6019,7 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
   final _vazioCtrl = TextEditingController();
   final _loteCtrl = TextEditingController();
   final _osCtrl = TextEditingController();
+  final _tagCtrl = TextEditingController();
   final _codigoFocus = FocusNode();
   final _barrasFocus = FocusNode();
   final _qtdFocus = FocusNode();
@@ -6015,12 +6028,34 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
   final _vazioFocus = FocusNode();
   final _loteFocus = FocusNode();
   final _osFocus = FocusNode();
+  final _tagFocus = FocusNode();
+  final AudioPlayer _alerta = AudioPlayer();
   String? _unidade;
   bool _gravando = false;
 
+  /// TAGs aceitas neste item (cada uma = 1 cilindro cheio), na ordem lida.
+  /// Guardadas na forma como existem na base de barras (exibição).
+  final List<String> _tags = [];
+
+  /// B91: identidade canônica de cada TAG aceita (sem zeros à esquerda).
+  /// "033661401" e "33661401" são o mesmo cilindro.
+  final Set<String> _tagsCanonicas = {};
+  String? _ultimoDescarte;
+
+  /// B89: disparo automático aos 9 dígitos (o CT60 não envia Enter de forma
+  /// confiável). Mesma regra do campo Tag da C1/C2.
+  Timer? _debounceTag;
+
+  /// B92: leituras serializadas. Cada leitura capturada entra na fila e o
+  /// campo é liberado na hora para a próxima; nada é perdido nem sobrescrito.
+  final Queue<String> _filaTags = Queue<String>();
+  bool _processandoTag = false;
+
   TarefaC3Local get t => widget.tarefa;
   bool get _material => campoC3Para(t.tipo) == CampoC3.quantidade;
+  bool get _gas => t.tipo == 'gas';
   String get _local => t.localNome ?? t.localId ?? '';
+  String get _loteAlvo => (t.lote ?? '').trim();
 
   @override
   void initState() {
@@ -6029,8 +6064,9 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
     _loteCtrl.text = t.lote ?? '';
     _enderecoCtrl.text = t.prateleira;
     _carregarUnidade();
+    if (!_material) _tagCtrl.addListener(_onTagChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
-      (_material ? _qtdFocus : _cheioFocus).requestFocus();
+      (_material ? _qtdFocus : _tagFocus).requestFocus();
     });
   }
 
@@ -6043,18 +6079,21 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
 
   @override
   void dispose() {
+    _tagCtrl.removeListener(_onTagChanged);
+    _debounceTag?.cancel();
     for (final c in [
       _codigoCtrl, _barrasCtrl, _qtdCtrl, _enderecoCtrl,
-      _cheioCtrl, _vazioCtrl, _loteCtrl, _osCtrl,
+      _cheioCtrl, _vazioCtrl, _loteCtrl, _osCtrl, _tagCtrl,
     ]) {
       c.dispose();
     }
     for (final f in [
       _codigoFocus, _barrasFocus, _qtdFocus, _enderecoFocus,
-      _cheioFocus, _vazioFocus, _loteFocus, _osFocus,
+      _cheioFocus, _vazioFocus, _loteFocus, _osFocus, _tagFocus,
     ]) {
       f.dispose();
     }
+    _alerta.dispose();
     super.dispose();
   }
 
@@ -6070,20 +6109,165 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
     return null;
   }
 
+  // ------------------------------------------------------------------
+  // Leitura de TAG (sequencial)
+  // ------------------------------------------------------------------
+
+  Future<void> _tocarAlerta() async {
+    HapticFeedback.heavyImpact();
+    try {
+      await _alerta.stop();
+      await _alerta.play(AssetSource('sounds/sino_alerta.mp3'));
+    } catch (_) {
+      SystemSound.play(SystemSoundType.alert);
+    }
+  }
+
+  Future<void> _descartar(String motivo) async {
+    if (mounted) setState(() => _ultimoDescarte = motivo);
+    await _tocarAlerta();
+  }
+
+  static String _canonica(String tag) {
+    final s = tag.trim().replaceFirst(RegExp(r'^0+'), '');
+    return s.isEmpty ? tag.trim() : s;
+  }
+
+  /// Há leitura de TAG em andamento ou aguardando (bloqueia Concluir).
+  bool get _tagPendente =>
+      _processandoTag ||
+      _filaTags.isNotEmpty ||
+      (_debounceTag?.isActive ?? false);
+
+  /// B89: mesmo princípio de _onBarrasChanged (C1/C2): 9 dígitos → busca
+  /// após 150 ms; Enter, se chegar, é gatilho extra (onSubmitted).
+  void _onTagChanged() {
+    _debounceTag?.cancel();
+    final raw = _tagCtrl.text;
+    final tag = raw.replaceAll('\n', '').trim();
+    if (raw.endsWith('\n') && tag.isNotEmpty) {
+      _debounceTag = Timer(const Duration(milliseconds: 50), _capturarTag);
+    } else if (tag.length >= 9) {
+      _debounceTag = Timer(const Duration(milliseconds: 150), _capturarTag);
+    }
+    if (mounted) setState(() {}); // atualiza o estado do botão Concluir
+  }
+
+  /// Retira a TAG do campo e põe na fila. O campo fica livre na hora para a
+  /// próxima leitura (B92: o fim de uma leitura nunca apaga a seguinte).
+  void _capturarTag() {
+    _debounceTag?.cancel();
+    if (_gravando) return;
+    final tag = _tagCtrl.text.replaceAll('\n', '').trim();
+    if (tag.isEmpty) return;
+    _tagCtrl.clear();
+    _tagFocus.requestFocus();
+    _filaTags.add(tag);
+    _processarFila();
+  }
+
+  Future<void> _processarFila() async {
+    if (_processandoTag) return;
+    setState(() => _processandoTag = true);
+    try {
+      while (_filaTags.isNotEmpty && mounted) {
+        await _resolverTag(_filaTags.removeFirst());
+      }
+    } finally {
+      if (mounted) setState(() => _processandoTag = false);
+    }
+  }
+
+  Future<void> _resolverTag(String tag) async {
+    try {
+      // Duplicidade já na forma canônica (antes de ir à base).
+      if (_tagsCanonicas.contains(_canonica(tag))) {
+        await _descartar('TAG $tag já foi lida neste item.');
+        return;
+      }
+      final repo = BarrasRepository();
+      var chave = tag;
+      var barra = await repo.getByTag(tag);
+      final semZeros = tag.replaceFirst(RegExp(r'^0+'), '');
+      if (barra == null && semZeros != tag && semZeros.isNotEmpty) {
+        barra = await repo.getByTag(semZeros);
+        chave = semZeros;
+      }
+      if (barra == null) {
+        await _descartar('TAG $tag não encontrada.');
+        return;
+      }
+      // B91: a identidade é a da base (a chave que resolveu), canonizada.
+      final canon = _canonica(chave);
+      if (_tagsCanonicas.contains(canon)) {
+        await _descartar('TAG $tag já foi lida neste item.');
+        return;
+      }
+      if (barra.codigo.trim() != t.codigo.trim()) {
+        await _descartar('TAG $tag é de outro produto (${barra.codigo}). Descartada.');
+        return;
+      }
+      // B90: em Gás a chave é código + lote + local. O lote da TAG tem de ser
+      // o da divergência, inclusive quando a divergência é a linha SEM lote.
+      // Cilindro não restringe lote (a chave não tem lote).
+      final loteTag = (barra.lote ?? '').trim();
+      if (_gas && loteTag != _loteAlvo) {
+        await _descartar('TAG $tag é ${loteTag.isEmpty ? 'sem lote' : 'do lote $loteTag'}, '
+            'não ${_loteAlvo.isEmpty ? 'da linha sem lote' : 'do lote $_loteAlvo'}. Descartada.');
+        return;
+      }
+      if (!mounted) return;
+      setState(() {
+        _tags.add(chave);
+        _tagsCanonicas.add(canon);
+        _ultimoDescarte = null;
+      });
+    } catch (e) {
+      await _descartar('Falha ao ler a TAG $tag: $e');
+    }
+  }
+
+  void _desfazerUltima() {
+    if (_tags.isEmpty || _tagPendente) return;
+    setState(() {
+      final ultima = _tags.removeLast();
+      _tagsCanonicas.remove(_canonica(ultima));
+    });
+    _tagFocus.requestFocus();
+  }
+
+  // ------------------------------------------------------------------
+  // Concluir item
+  // ------------------------------------------------------------------
+
   Future<void> _confirmar() async {
     if (_gravando) return;
+    // B92: não conclui com TAG em leitura ou na fila (ela ficaria de fora).
+    if (_tagPendente) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Aguarde: ainda há TAG sendo lida.')));
+      return;
+    }
+    if (!_material && _tagCtrl.text.trim().isNotEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text('Há uma TAG incompleta no campo. Leia de novo ou apague.'),
+          backgroundColor: Colors.orange));
+      return;
+    }
     if (!(_formKey.currentState?.validate() ?? true)) return;
-    final cheio = _num(_cheioCtrl);
+    final cheio = _num(_cheioCtrl) + (_material ? 0 : _tags.length);
     final vazio = _num(_vazioCtrl);
     final qtd = _num(_qtdCtrl);
     final zero = _material ? qtd == 0 : (cheio == 0 && vazio == 0);
+    // Como nas outras contagens, Concluir/Enter grava direto. Só o zero
+    // (= não encontrado) pede confirmação.
     if (zero) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: const Text('Não encontrado?'),
           content: Text('Confirmar ZERO para ${t.codigo}'
-              '${(t.lote ?? '').isNotEmpty ? ' · lote ${t.lote}' : ''} em $_local?'),
+              '${_loteAlvo.isNotEmpty ? ' · lote $_loteAlvo' : ''} em $_local?'),
           actions: [
             TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
@@ -6119,116 +6303,322 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
     }
   }
 
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Lego - Lançamentos · C3',
-            style: TextStyle(fontSize: 16)),
+  /// Sair com TAGs lidas e sem concluir perde as leituras: confirma.
+  Future<bool> _podeSair() async {
+    // Gravando: não sai até concluir (erro de gravação continua visível).
+    if (_gravando) return false;
+    final temDados = _tags.isNotEmpty ||
+        _tagPendente ||
+        _cheioCtrl.text.trim().isNotEmpty ||
+        _vazioCtrl.text.trim().isNotEmpty ||
+        _qtdCtrl.text.trim().isNotEmpty;
+    if (!temDados) return true;
+    final sair = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text('Sair sem concluir?'),
+        content: Text(_tags.isNotEmpty
+            ? 'As ${_tags.length} TAG(s) lidas neste item serão perdidas.'
+            : 'O que foi digitado neste item será perdido.'),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('Continuar no item')),
+          FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('Sair')),
+        ],
       ),
-      body: Column(
-        children: [
-          // Cabeçalho fixo, como nas outras contagens.
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: Colors.deepPurple.withValues(alpha: 0.10),
-              border: const Border(
-                  bottom: BorderSide(color: Colors.deepPurple, width: 2)),
-            ),
-            child: Row(children: [
-              const Icon(Icons.fact_check, color: Colors.deepPurple, size: 18),
-              const SizedBox(width: 8),
-              Expanded(
-                child: Text(widget.cabecalho ?? 'Terceira contagem',
-                    style: const TextStyle(
-                        fontWeight: FontWeight.bold, fontSize: 14)),
-              ),
-            ]),
+    );
+    return sair == true;
+  }
+
+  // ------------------------------------------------------------------
+  // Tela
+  // ------------------------------------------------------------------
+
+  Widget _cabecalho() => Container(
+        width: double.infinity,
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+        decoration: BoxDecoration(
+          color: Colors.deepPurple.withValues(alpha: 0.10),
+          border: const Border(
+              bottom: BorderSide(color: Colors.deepPurple, width: 2)),
+        ),
+        child: Row(children: [
+          const Icon(Icons.fact_check, color: Colors.deepPurple, size: 18),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(widget.cabecalho ?? 'Terceira contagem',
+                style:
+                    const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
           ),
-          // Localização da divergência: fixada, sem troca.
-          Padding(
-            padding: const EdgeInsets.all(8),
-            child: Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: Colors.green.shade50,
-                borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: Colors.green, width: 2),
+        ]),
+      );
+
+  /// Mapa da planta com o alfinete vermelho na área da divergência.
+  void _abrirMapa() {
+    final id = t.localId;
+    if (id == null || id.isEmpty) return;
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => PlantMapPage(
+        jsonAsset: 'assets/plantas/PLANTA_ATUAL_DE_DIADEMA_areas.json',
+        destaqueAreaId: id,
+      ),
+    ));
+  }
+
+  Widget _localFixado() => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 8, 8, 4),
+        child: InkWell(
+         onTap: (t.localId ?? '').isEmpty ? null : _abrirMapa,
+         borderRadius: BorderRadius.circular(12),
+         child: Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(10),
+          decoration: BoxDecoration(
+            color: Colors.green.shade50,
+            borderRadius: BorderRadius.circular(12),
+            border: Border.all(color: Colors.green, width: 2),
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(children: [
+                const Icon(Icons.lock, color: Colors.green, size: 18),
+                const SizedBox(width: 6),
+                const Expanded(
+                  child: Text('📍 Divergência em (fixada):',
+                      style: TextStyle(fontWeight: FontWeight.bold)),
+                ),
+                if ((t.localId ?? '').isNotEmpty)
+                  TextButton.icon(
+                    style: TextButton.styleFrom(
+                        visualDensity: VisualDensity.compact,
+                        foregroundColor: Colors.red.shade700),
+                    onPressed: _abrirMapa,
+                    icon: const Icon(Icons.place, size: 18),
+                    label: const Text('Ver no mapa'),
+                  ),
+              ]),
+              const SizedBox(height: 2),
+              Text(_local.isEmpty ? '—' : _local,
+                  style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                      color: Colors.blue.shade900)),
+              Text(
+                  '${t.codigo} · ${t.descricao}'
+                  '${_loteAlvo.isNotEmpty ? ' · lote $_loteAlvo' : ''}'
+                  '${t.prateleira.isNotEmpty ? ' · prateleira ${t.prateleira}' : ''}',
+                  style: const TextStyle(fontSize: 12)),
+            ],
+          ),
+         ),
+        ),
+      );
+
+  Widget _formCodigo() => AbsorbPointer(
+        absorbing: _gravando,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+          child: _FormPane(
+            formKey: _formKey,
+            codigoCtrl: _codigoCtrl,
+            barrasCtrl: _barrasCtrl,
+            qtdCtrl: _qtdCtrl,
+            enderecoCtrl: _enderecoCtrl,
+            cheioCtrl: _cheioCtrl,
+            vazioCtrl: _vazioCtrl,
+            loteCtrl: _loteCtrl,
+            ordemServicoCtrl: _osCtrl,
+            codigoFocus: _codigoFocus,
+            barrasFocus: _barrasFocus,
+            qtdFocus: _qtdFocus,
+            enderecoFocus: _enderecoFocus,
+            cheioFocus: _cheioFocus,
+            vazioFocus: _vazioFocus,
+            loteFocus: _loteFocus,
+            ordemServicoFocus: _osFocus,
+            descricao: t.descricao,
+            unidade: _unidade,
+            onBuscar: () {},
+            onBuscarBarras: () {},
+            onConfirmar: _confirmar,
+            validarCodigo: (_) => null,
+            validarQuantidade: _validarNumero,
+            validarEndereco: (_) => null,
+            validarCheio: _validarNumero,
+            validarVazio: _validarNumero,
+            // Travado: código, TAG, lote, prateleira e OS.
+            codigoEnabled: false,
+            barrasEnabled: false,
+            loteEnabled: false,
+            pratEnabled: false,
+            osEnabled: false,
+            // A TAG tem aba própria: não repetir o campo aqui.
+            soCodigo: true,
+            enterConfirma: true,
+            // Liberado conforme o tipo.
+            qtdPratEnabled: _material,
+            cheioEnabled: !_material,
+            vazioEnabled: !_material,
+          ),
+        ),
+      );
+
+  Widget _abaTag() => Padding(
+        padding: const EdgeInsets.all(8),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            TextField(
+              controller: _tagCtrl,
+              focusNode: _tagFocus,
+              enabled: !_gravando,
+              autofocus: true,
+              decoration: InputDecoration(
+                labelText: 'Tag',
+                hintText: 'Bipe as TAGs de ${t.codigo}'
+                    '${_gas ? (_loteAlvo.isNotEmpty ? ' · lote $_loteAlvo' : ' · sem lote') : ''}',
+                isDense: true,
+                filled: true,
+                border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(14)),
+                suffixIcon: _processandoTag
+                    ? const Padding(
+                        padding: EdgeInsets.all(12),
+                        child: SizedBox(
+                            width: 16,
+                            height: 16,
+                            child: CircularProgressIndicator(strokeWidth: 2)))
+                    : IconButton(
+                        icon: const Icon(Icons.qr_code_scanner, size: 18),
+                        onPressed: _capturarTag,
+                      ),
               ),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
+              textInputAction: TextInputAction.search,
+              // Enter é só gatilho extra; o disparo principal é aos 9 dígitos.
+              onSubmitted: (_) => _capturarTag(),
+            ),
+            const SizedBox(height: 10),
+            Container(
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              decoration: BoxDecoration(
+                color: Colors.deepPurple.withValues(alpha: 0.06),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(children: [
+                Text('${_tags.length}',
+                    style: const TextStyle(
+                        fontSize: 40, fontWeight: FontWeight.bold)),
+                Text(_tags.length == 1 ? 'TAG lida (1 cheio)' : 'TAGs lidas (cheios)',
+                    style: const TextStyle(fontSize: 13)),
+              ]),
+            ),
+            if (_ultimoDescarte != null) ...[
+              const SizedBox(height: 8),
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.red.shade50,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.red.shade300),
+                ),
+                child: Row(children: [
+                  Icon(Icons.block, color: Colors.red.shade700, size: 18),
+                  const SizedBox(width: 6),
+                  Expanded(
+                      child: Text(_ultimoDescarte!,
+                          style: TextStyle(color: Colors.red.shade800))),
+                ]),
+              ),
+            ],
+            const SizedBox(height: 8),
+            Expanded(
+              child: ListView(
                 children: [
-                  const Row(children: [
-                    Icon(Icons.lock, color: Colors.green, size: 18),
-                    SizedBox(width: 6),
-                    Text('📍 Divergência em (fixada):',
-                        style: TextStyle(fontWeight: FontWeight.bold)),
-                  ]),
-                  const SizedBox(height: 4),
-                  Text(_local.isEmpty ? '—' : _local,
-                      style: TextStyle(
-                          fontSize: 20,
-                          fontWeight: FontWeight.w600,
-                          color: Colors.blue.shade900)),
-                  if (t.prateleira.isNotEmpty)
-                    Text('Prateleira ${t.prateleira}',
-                        style: const TextStyle(fontWeight: FontWeight.w600)),
+                  for (final tag in _tags.reversed)
+                    ListTile(
+                      dense: true,
+                      visualDensity: VisualDensity.compact,
+                      leading: const Icon(Icons.check_circle,
+                          color: Colors.green, size: 18),
+                      title: Text(tag),
+                    ),
                 ],
               ),
             ),
-          ),
-          Expanded(
-            child: AbsorbPointer(
-              absorbing: _gravando,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(horizontal: 8),
-                child: _FormPane(
-                  formKey: _formKey,
-                  codigoCtrl: _codigoCtrl,
-                  barrasCtrl: _barrasCtrl,
-                  qtdCtrl: _qtdCtrl,
-                  enderecoCtrl: _enderecoCtrl,
-                  cheioCtrl: _cheioCtrl,
-                  vazioCtrl: _vazioCtrl,
-                  loteCtrl: _loteCtrl,
-                  ordemServicoCtrl: _osCtrl,
-                  codigoFocus: _codigoFocus,
-                  barrasFocus: _barrasFocus,
-                  qtdFocus: _qtdFocus,
-                  enderecoFocus: _enderecoFocus,
-                  cheioFocus: _cheioFocus,
-                  vazioFocus: _vazioFocus,
-                  loteFocus: _loteFocus,
-                  ordemServicoFocus: _osFocus,
-                  descricao: t.descricao,
-                  unidade: _unidade,
-                  onBuscar: () {},
-                  onBuscarBarras: () {},
-                  onConfirmar: _confirmar,
-                  validarCodigo: (_) => null,
-                  validarQuantidade: _validarNumero,
-                  validarEndereco: (_) => null,
-                  validarCheio: _validarNumero,
-                  validarVazio: _validarNumero,
-                  // Travado: código, TAG, lote, prateleira.
-                  codigoEnabled: false,
-                  barrasEnabled: false,
-                  loteEnabled: false,
-                  pratEnabled: false,
-                  enterConfirma: true,
-                  // Liberado conforme o tipo.
-                  qtdPratEnabled: _material,
-                  cheioEnabled: !_material,
-                  vazioEnabled: !_material,
-                ),
+            if (_tags.isNotEmpty)
+              TextButton.icon(
+                onPressed: _gravando || _tagPendente ? null : _desfazerUltima,
+                icon: const Icon(Icons.undo, size: 18),
+                label: const Text('Desfazer a última TAG'),
               ),
-            ),
-          ),
-          if (_gravando) const LinearProgressIndicator(),
-        ],
+            Text(
+                'Vazios e contagem à mão: aba Código. '
+                'O resultado soma as TAGs com os cheios digitados.',
+                textAlign: TextAlign.center,
+                style: TextStyle(fontSize: 11, color: Colors.grey.shade700)),
+          ],
+        ),
+      );
+
+  Widget _botaoConcluir() => Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+        child: FilledButton.icon(
+          style: FilledButton.styleFrom(
+              minimumSize: const Size.fromHeight(46),
+              backgroundColor: Colors.deepPurple),
+          onPressed: _gravando || _tagPendente ? null : _confirmar,
+          icon: const Icon(Icons.done_all),
+          label: Text(_tagPendente
+              ? 'Lendo TAG…'
+              : _material || _tags.isEmpty
+                  ? 'Concluir item'
+                  : 'Concluir item · ${_tags.length} TAG(s)'),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) {
+    final corpo = _material
+        ? Column(children: [
+            _cabecalho(),
+            _localFixado(),
+            Expanded(child: _formCodigo()),
+            _botaoConcluir(),
+            if (_gravando) const LinearProgressIndicator(),
+          ])
+        : DefaultTabController(
+            length: 2,
+            child: Column(children: [
+              _cabecalho(),
+              _localFixado(),
+              const TabBar(tabs: [
+                Tab(icon: Icon(Icons.nfc, size: 18), text: 'TAG'),
+                Tab(icon: Icon(Icons.keyboard, size: 18), text: 'Código'),
+              ]),
+              Expanded(
+                child: TabBarView(children: [_abaTag(), _formCodigo()]),
+              ),
+              _botaoConcluir(),
+              if (_gravando) const LinearProgressIndicator(),
+            ]),
+          );
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        if (await _podeSair() && mounted) Navigator.of(context).pop();
+      },
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('Lego - Lançamentos · C3',
+              style: TextStyle(fontSize: 16)),
+        ),
+        body: corpo,
       ),
     );
   }
