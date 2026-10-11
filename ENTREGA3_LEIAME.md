@@ -360,3 +360,11 @@ Substitui o rev12 (que só tinha o item 4).
 
 - B96: sem deslizar entre abas em nenhuma contagem (C1/C2 e C3). Troca de aba só tocando na aba.
 - Lógica da TAG na C3 mantida (rev1): só TAG do produto e do lote procurados; outro lote/produto e TAG repetida no item são descartados com sino; cada TAG = 1 cheio, somada na conclusão.
+
+## Mapa rev4 (10-11/10) — áreas em círculo e giradas
+
+- JSON de áreas aceita `"forma": "circulo"` (x/y/w/h = quadrado que envolve o círculo). Sem o campo = retângulo, como antes.
+- O mapa desenha o círculo e o toque só seleciona dentro dele.
+- Toque sobre áreas sobrepostas: ganha a menor (uma área dentro de outra continua selecionável).
+- JSON aceita `"rot"` (graus, sentido horário, em torno do centro) para retângulos girados; x/y/w/h são o retângulo antes de girar. O mapa desenha, seleciona e enquadra a área girada; o nome acompanha o giro.
+- O JSON é gerado pelo "Editor de Áreas da Planta" (artifact). O LEGO original ainda não lê `forma` nem `rot`: lá um círculo aparece como quadrado e uma área girada aparece reta.

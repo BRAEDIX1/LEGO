@@ -37,6 +37,12 @@ class PlantArea {
   final double y;
   final double w;
   final double h;
+  /// Área desenhada como círculo (JSON: "forma": "circulo"). x/y/w/h são o
+  /// quadrado que envolve o círculo. Sem o campo = retângulo (como sempre).
+  final bool circulo;
+  /// Giro do retângulo em graus, sentido horário, em torno do centro
+  /// (JSON: "rot"). x/y/w/h descrevem o retângulo antes de girar.
+  final double rot;
 
   const PlantArea({
     required this.id,
@@ -45,6 +51,8 @@ class PlantArea {
     required this.y,
     required this.w,
     required this.h,
+    this.circulo = false,
+    this.rot = 0,
   });
 
   factory PlantArea.fromJson(Map<String, dynamic> j) => PlantArea(
@@ -54,7 +62,23 @@ class PlantArea {
         y: (j['y'] as num).toDouble(),
         w: (j['w'] as num).toDouble(),
         h: (j['h'] as num).toDouble(),
+        circulo: j['forma'] == 'circulo',
+        rot: j['forma'] == 'circulo' ? 0 : ((j['rot'] as num?)?.toDouble() ?? 0),
       );
+
+  bool get girada => !circulo && rot.abs() > 1e-6;
+  double get _rad => rot * pi / 180;
+
+  /// Retângulo que envolve a área já girada, em pixels de [imageSize].
+  Rect envoltorio(Size imageSize) {
+    final r = toRect(imageSize);
+    if (!girada) return r;
+    final c = cos(_rad).abs(), s = sin(_rad).abs();
+    return Rect.fromCenter(
+        center: r.center,
+        width: r.width * c + r.height * s,
+        height: r.width * s + r.height * c);
+  }
 
   Rect toRect(Size imageSize) => Rect.fromLTWH(
         x * imageSize.width,
@@ -63,8 +87,23 @@ class PlantArea {
         h * imageSize.height,
       );
 
-  bool contains(double rx, double ry) =>
-      rx >= x && rx <= x + w && ry >= y && ry <= y + h;
+  /// [aspecto] = largura/altura da imagem: o giro é feito em pixels, não
+  /// em coordenadas relativas.
+  bool contains(double rx, double ry, {double aspecto = 1}) {
+    if (girada) {
+      final cx = (x + w / 2) * aspecto, cy = y + h / 2;
+      final dx = rx * aspecto - cx, dy = ry - cy;
+      final lx = dx * cos(-_rad) - dy * sin(-_rad);
+      final ly = dx * sin(-_rad) + dy * cos(-_rad);
+      return lx.abs() <= w * aspecto / 2 && ly.abs() <= h / 2;
+    }
+    if (circulo) {
+      final cx = x + w / 2, cy = y + h / 2;
+      final dx = (rx - cx) / (w / 2), dy = (ry - cy) / (h / 2);
+      return dx * dx + dy * dy <= 1;
+    }
+    return rx >= x && rx <= x + w && ry >= y && ry <= y + h;
+  }
 }
 
 class PlantLayout {
@@ -213,10 +252,16 @@ class _PlantMapPageState extends State<PlantMapPage>
     final rx = (transformed.dx - imageRect.left) / imageRect.width;
     final ry = (transformed.dy - imageRect.top)  / imageRect.height;
 
+    // A menor área sob o dedo ganha: uma área desenhada dentro de outra
+    // continua selecionável.
+    PlantArea? melhor;
     for (final area in layout.areas) {
-      if (area.contains(rx, ry)) return area;
+      if (area.contains(rx, ry, aspecto: layout.aspectRatio) &&
+          (melhor == null || area.w * area.h < melhor.w * melhor.h)) {
+        melhor = area;
+      }
     }
-    return null;
+    return melhor;
   }
 
   Rect _imageRectInWidget(Size widgetSize, double aspectRatio) {
@@ -240,11 +285,12 @@ class _PlantMapPageState extends State<PlantMapPage>
     final layout    = _layout!;
     final imageRect = _imageRectInWidget(widgetSize, layout.aspectRatio);
 
-    final areaCenterX = imageRect.left + (area.x + area.w / 2) * imageRect.width;
-    final areaCenterY = imageRect.top  + (area.y + area.h / 2) * imageRect.height;
+    final env = area.envoltorio(imageRect.size);
+    final areaCenterX = imageRect.left + env.center.dx;
+    final areaCenterY = imageRect.top  + env.center.dy;
 
-    final scaleByWidth  = widgetSize.width  / (area.w * imageRect.width)  * 0.8;
-    final scaleByHeight = widgetSize.height / (area.h * imageRect.height) * 0.8;
+    final scaleByWidth  = widgetSize.width  / env.width  * 0.8;
+    final scaleByHeight = widgetSize.height / env.height * 0.8;
     final targetScale   = min(max(min(scaleByWidth, scaleByHeight), _minScale), _maxScale);
 
     final tx = widgetSize.width  / 2 - areaCenterX * targetScale;
@@ -457,9 +503,23 @@ class _AreaOverlayPainter extends CustomPainter {
       final pxH = rect.height * currentScale;
       final areaVisivel = pxW >= _minPxParaLabel && pxH >= _minPxParaLabel;
 
+      void desenhar(Paint p) {
+        if (area.circulo) {
+          canvas.drawOval(rect, p);
+        } else if (area.girada) {
+          canvas.save();
+          canvas.translate(rect.center.dx, rect.center.dy);
+          canvas.rotate(area.rot * pi / 180);
+          canvas.drawRect(
+              Rect.fromCenter(center: Offset.zero, width: rect.width, height: rect.height), p);
+          canvas.restore();
+        } else {
+          canvas.drawRect(rect, p);
+        }
+      }
+
       // Fill — cinza visível sempre, verde quando selecionada
-      canvas.drawRect(
-        rect,
+      desenhar(
         Paint()
           ..color = isSelected
               ? const Color(0xFF00D4AA).withOpacity(0.40)
@@ -467,8 +527,7 @@ class _AreaOverlayPainter extends CustomPainter {
       );
 
       // Border — sempre visível, destaca quando selecionada
-      canvas.drawRect(
-        rect,
+      desenhar(
         Paint()
           ..color = isSelected
               ? const Color(0xFF00D4AA)
@@ -498,6 +557,18 @@ class _AreaOverlayPainter extends CustomPainter {
         textDirection: TextDirection.ltr,
         textAlign:     TextAlign.center,
       )..layout(maxWidth: rect.width);
+
+      if (area.girada && label.height <= rect.height) {
+        var g = area.rot;
+        if (g > 90) g -= 180;
+        if (g < -90) g += 180;
+        canvas.save();
+        canvas.translate(rect.center.dx, rect.center.dy);
+        canvas.rotate(g * pi / 180);
+        label.paint(canvas, Offset(-label.width / 2, -label.height / 2));
+        canvas.restore();
+        continue;
+      }
 
       // Só pinta o label se ele couber verticalmente na área
       if (label.height <= rect.height) {

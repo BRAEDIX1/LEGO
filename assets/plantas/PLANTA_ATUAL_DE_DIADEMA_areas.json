@@ -9,24 +9,24 @@
     {
       "id": "ENCHIMENTO_OXIGENIO",
       "nome": "ENCHIMENTO_OXIGENIO",
-      "x": 0.41965,
-      "y": 0.48844,
+      "x": 0.41993,
+      "y": 0.48715,
       "w": 0.04817,
-      "h": 0.06292
+      "h": 0.06163
     },
     {
       "id": "ENCHIMENTO_AR_MEDICINAL",
       "nome": "ENCHIMENTO_AR_MEDICINAL",
-      "x": 0.4007,
-      "y": 0.48844,
-      "w": 0.01612,
-      "h": 0.06355
+      "x": 0.40136,
+      "y": 0.48715,
+      "w": 0.01581,
+      "h": 0.06175
     },
     {
       "id": "ENCHIMENTO_LIBERATOR",
       "nome": "ENCHIMENTO_LIBERATOR",
-      "x": 0.51176,
-      "y": 0.50931,
+      "x": 0.51164,
+      "y": 0.50519,
       "w": 0.02701,
       "h": 0.02118
     },
@@ -34,17 +34,17 @@
       "id": "ENCHIMENTO_ACETILENO",
       "nome": "ENCHIMENTO_ACETILENO",
       "x": 0.29025,
-      "y": 0.48813,
+      "y": 0.48576,
       "w": 0.10763,
-      "h": 0.06386
+      "h": 0.06264
     },
     {
       "id": "REQUALIFICACAO_ACETILENO",
       "nome": "REQUALIFICACAO_ACETILENO",
       "x": 0.29045,
-      "y": 0.55448,
-      "w": 0.0252,
-      "h": 0.01651
+      "y": 0.55294,
+      "w": 0.02489,
+      "h": 0.01445
     },
     {
       "id": "DESCARTE_ACETILENO",
@@ -66,7 +66,7 @@
       "id": "CARRETA_ACETILENO",
       "nome": "CARRETA_ACETILENO",
       "x": 0.26969,
-      "y": 0.48816,
+      "y": 0.48287,
       "w": 0.01769,
       "h": 0.05668
     },
@@ -81,32 +81,32 @@
     {
       "id": "PALETES_PINTURA",
       "nome": "PALETES_PINTURA",
-      "x": 0.4354,
-      "y": 0.61861,
+      "x": 0.4344,
+      "y": 0.61476,
       "w": 0.03388,
       "h": 0.01386
     },
     {
       "id": "AREA_PINTURA",
       "nome": "AREA_PINTURA",
-      "x": 0.43639,
-      "y": 0.60629,
+      "x": 0.43556,
+      "y": 0.60783,
       "w": 0.02914,
       "h": 0.00462
     },
     {
       "id": "OXIDO_NITROSO",
       "nome": "OXIDO_NITROSO",
-      "x": 0.46105,
-      "y": 0.59012,
+      "x": 0.46122,
+      "y": 0.5855,
       "w": 0.00722,
       "h": 0.01347
     },
     {
       "id": "TESTE_HIDROSTATICO",
       "nome": "TESTE_HIDROSTATICO",
-      "x": 0.43664,
-      "y": 0.58089,
+      "x": 0.43681,
+      "y": 0.57755,
       "w": 0.01046,
       "h": 0.02233
     },
@@ -129,8 +129,8 @@
     {
       "id": "MONTAGEM_PALETES_OXIGENIO",
       "nome": "MONTAGEM_PALETES_OXIGENIO",
-      "x": 0.40053,
-      "y": 0.43191,
+      "x": 0.40087,
+      "y": 0.42716,
       "w": 0.067,
       "h": 0.04234
     },
@@ -145,8 +145,8 @@
     {
       "id": "PORTA_PALETES_MISTURAS",
       "nome": "PORTA_PALETES_MISTURAS",
-      "x": 0.19404,
-      "y": 0.46925,
+      "x": 0.19418,
+      "y": 0.46711,
       "w": 0.04652,
       "h": 0.00577
     },
@@ -169,16 +169,16 @@
     {
       "id": "ESTACIONAMENTO_MUNCK",
       "nome": "ESTACIONAMENTO_MUNCK",
-      "x": 0.26403,
+      "x": 0.26252,
       "y": 0.64363,
-      "w": 0.00374,
+      "w": 0.00525,
       "h": 0.08892
     },
     {
       "id": "REQUALIFICACAO_ALTA_PRESSAO",
       "nome": "REQUALIFICACAO_ALTA_PRESSAO",
       "x": 0.1913,
-      "y": 0.59128,
+      "y": 0.58729,
       "w": 0.01918,
       "h": 0.02387
     },
@@ -186,31 +186,31 @@
       "id": "OFICINA_MECANICA",
       "nome": "OFICINA_MECANICA",
       "x": 0.19155,
-      "y": 0.61938,
+      "y": 0.61616,
       "w": 0.02242,
       "h": 0.06929
     },
     {
       "id": "ENCHIMENTO_MISTURAS",
       "nome": "ENCHIMENTO_MISTURAS",
-      "x": 0.19155,
-      "y": 0.47887,
+      "x": 0.19145,
+      "y": 0.47393,
       "w": 0.04782,
       "h": 0.07006
     },
     {
       "id": "ESTOQUE_GASES_ESPECIAIS",
       "nome": "ESTOQUE_GASES_ESPECIAIS",
-      "x": 0.1913,
-      "y": 0.55355,
-      "w": 0.04807,
-      "h": 0.03388
+      "x": 0.19119,
+      "y": 0.54893,
+      "w": 0.04779,
+      "h": 0.03205
     },
     {
       "id": "ENCHIMENTO_NITROGENIO",
       "nome": "ENCHIMENTO_NITROGENIO",
-      "x": 0.15966,
-      "y": 0.6009,
+      "x": 0.16046,
+      "y": 0.59506,
       "w": 0.01046,
       "h": 0.05543
     },
@@ -225,8 +225,8 @@
     {
       "id": "PALETES_DIVERSOS_4",
       "nome": "PALETES_DIVERSOS_4",
-      "x": 0.18607,
-      "y": 0.4781,
+      "x": 0.18621,
+      "y": 0.47253,
       "w": 0.00274,
       "h": 0.10047
     },
@@ -249,8 +249,8 @@
     {
       "id": "PALETES_DIVERSOS_1",
       "nome": "PALETES_DIVERSOS_1",
-      "x": 0.1903,
-      "y": 0.37032,
+      "x": 0.19117,
+      "y": 0.36733,
       "w": 0.04633,
       "h": 0.01655
     },
@@ -265,24 +265,16 @@
     {
       "id": "GAIOLA_ALMOXARIFADO",
       "nome": "GAIOLA_ALMOXARIFADO",
-      "x": 0.54674,
-      "y": 0.66134,
+      "x": 0.54686,
+      "y": 0.65758,
       "w": 0.01569,
       "h": 0.04119
     },
     {
-      "id": "PALETES_FURGOES",
-      "nome": "PALETES_FURGOES",
-      "x": 0.74351,
-      "y": 0.47425,
-      "w": 0.01519,
-      "h": 0.01848
-    },
-    {
       "id": "ESTACIONAMENTO_CAMINHOES",
       "nome": "ESTACIONAMENTO_CAMINHOES",
-      "x": 0.39056,
-      "y": 0.30372,
+      "x": 0.38954,
+      "y": 0.29739,
       "w": 0.15294,
       "h": 0.05081
     },
@@ -297,16 +289,17 @@
     {
       "id": "CABINE_HOMECARE",
       "nome": "CABINE_HOMECARE",
-      "x": 0.78448,
-      "y": 0.40422,
-      "w": 0.01585,
-      "h": 0.02804
+      "x": 0.79042,
+      "y": 0.4044,
+      "w": 0.00535,
+      "h": 0.01875,
+      "rot": -10
     },
     {
       "id": "VENT_ACETILENO",
       "nome": "VENT_ACETILENO",
-      "x": 0.28097,
-      "y": 0.55548,
+      "x": 0.2808,
+      "y": 0.55189,
       "w": 0.00648,
       "h": 0.01578
     },
@@ -336,9 +329,9 @@
     },
     {
       "id": "CAIXAS_GELO",
-      "nome": "CAIXAS_GELO",
-      "x": 0.30164,
-      "y": 0.35184,
+      "nome": "CAIXAS DE GELO 2",
+      "x": 0.30193,
+      "y": 0.3487,
       "w": 0.0284,
       "h": 0.01578
     },
@@ -353,10 +346,119 @@
     {
       "id": "MONTAGEM_PALETES_MISTURAS",
       "nome": "MONTAGEM_PALETES_MISTURAS",
-      "x": 0.1911,
-      "y": 0.43579,
+      "x": 0.19096,
+      "y": 0.43236,
       "w": 0.05407,
       "h": 0.03021
+    },
+    {
+      "id": "GREMIO",
+      "nome": "GRÊMIO",
+      "x": 0.66366,
+      "y": 0.46629,
+      "w": 0.01266,
+      "h": 0.04288,
+      "rot": 18.2
+    },
+    {
+      "id": "DEPOSITO",
+      "nome": "DEPÓSITO",
+      "x": 0.56489,
+      "y": 0.65799,
+      "w": 0.01182,
+      "h": 0.04029
+    },
+    {
+      "id": "PRODUTOS_QUIMICOS",
+      "nome": "PRODUTOS QUÍMICOS",
+      "x": 0.55724,
+      "y": 0.70293,
+      "w": 0.01981,
+      "h": 0.0111
+    },
+    {
+      "id": "DESCARTAVEIS",
+      "nome": "DESCARTÁVEIS",
+      "x": 0.56488,
+      "y": 0.61362,
+      "w": 0.01196,
+      "h": 0.02156
+    },
+    {
+      "id": "CARRETA",
+      "nome": "CARRETA",
+      "x": 0.52446,
+      "y": 0.42486,
+      "w": 0.01525,
+      "h": 0.06917,
+      "rot": 22.6
+    },
+    {
+      "id": "CALMIX",
+      "nome": "CALMIX",
+      "x": 0.23175,
+      "y": 0.81386,
+      "w": 0.03857,
+      "h": 0.01567,
+      "rot": -9.2
+    },
+    {
+      "id": "COMPRESSORES",
+      "nome": "COMPRESSORES",
+      "x": 0.33493,
+      "y": 0.58409,
+      "w": 0.0196,
+      "h": 0.06391
+    },
+    {
+      "id": "DELUGE_1",
+      "nome": "DELUGE 1",
+      "x": 0.36467,
+      "y": 0.55226,
+      "w": 0.02242,
+      "h": 0.0059
+    },
+    {
+      "id": "CONFERENCIA",
+      "nome": "CONFERÊNCIA",
+      "x": 0.57826,
+      "y": 0.29109,
+      "w": 0.02002,
+      "h": 0.04974,
+      "rot": 31.6
+    },
+    {
+      "id": "DELUGE_2",
+      "nome": "DELUGE 2",
+      "x": 0.19061,
+      "y": 0.71367,
+      "w": 0.01207,
+      "h": 0.00665
+    },
+    {
+      "id": "CAIXAS_DE_GELO_1",
+      "nome": "CAIXAS DE GELO 1",
+      "x": 0.51434,
+      "y": 0.6573,
+      "w": 0.02608,
+      "h": 0.01072,
+      "rot": 8.3
+    },
+    {
+      "id": "GELO_SECO",
+      "nome": "GELO SECO",
+      "x": 0.54761,
+      "y": 0.61941,
+      "w": 0.0134,
+      "h": 0.01542
+    },
+    {
+      "id": "MINIBULK",
+      "nome": "MINIBULK",
+      "x": 0.18412,
+      "y": 0.39369,
+      "w": 0.00406,
+      "h": 0.01391
     }
   ]
 }
