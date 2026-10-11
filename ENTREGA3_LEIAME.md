@@ -349,3 +349,9 @@ Substitui o rev12 (que só tinha o item 4).
 - Aba Código da C3: `soCodigo: true` (sem o campo Tag duplicado).
 - Sair durante a gravação: bloqueado.
 - Mapa: `mounted` conferido após carregar o JSON.
+
+## C3 rev2 (10/10) — B93: C3 travada após "distribuição mudou"
+
+- Causa: redistribuição (versão 1 → 2) com o item ainda do mesmo operador. O resultado da versão 1 foi recusado, o aparelho tratou "recusado" como concluído e liberou "Finalizar minha C3" com 0 de 1 sincronizado. Finalizado não baixa mais tarefas (B76) nem recebe na redistribuição (B79) → C3 sem saída.
+- Correção 1: depois de uma recusa, o aparelho rebaixa a lista. Item que continua dele volta para "a contar" na versão nova; item que foi para outro operador segue recusado.
+- Correção 2: "Finalizar minha C3" confere no servidor; com item dele ainda sem resultado, não finaliza.

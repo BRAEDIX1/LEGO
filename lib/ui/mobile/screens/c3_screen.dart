@@ -96,8 +96,8 @@ class _MinhasTarefasC3ScreenState extends State<MinhasTarefasC3Screen> {
       final r = await _c3.sincronizar();
       await _carregar();
       if (r.recusadas > 0) {
-        _snack('${r.recusadas} item(ns) recusado(s) pelo servidor — veja o '
-            'motivo na lista.');
+        _snack('${r.recusadas} item(ns) recusado(s) pelo servidor. Se ainda '
+            'forem seus, voltaram para "a contar"; os outros mostram o motivo.');
       }
     } catch (_) {
       // sem rede: tenta de novo depois

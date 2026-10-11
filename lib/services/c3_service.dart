@@ -586,7 +586,7 @@ class C3Service {
 
   Future<ResultadoSync> _sincronizarUmaVez() async {
     final u = _user();
-    final (invId, _, retrato) = await lerLocal();
+    final (invId, numero, retrato) = await lerLocal();
     if (invId == null) return const ResultadoSync(0, 0, 0);
 
     var env = 0, rec = 0, fal = 0;
@@ -650,6 +650,17 @@ class C3Service {
           fal++; // fica concluída no aparelho; reenviar depois
       }
     }
+    // B93: recusa por versão nova com o item ainda MEU não é beco sem saída.
+    // Rebaixa a lista: a mescla troca a conclusão antiga pela tarefa da
+    // versão nova (volta para "a contar"). Item que foi para outro operador
+    // continua recusado. Sem rede / C3 fechada: fica como está.
+    if (rec > 0) {
+      try {
+        await baixarMinhasTarefas(invId, numero ?? '');
+      } catch (e) {
+        debugPrint('C3: rebaixar após recusa falhou: $e');
+      }
+    }
     final (_, _, atual) = await lerLocal();
     await informarProgresso(invId, atual);
     return ResultadoSync(env, rec, fal);
@@ -668,6 +679,20 @@ class C3Service {
     if (!todasSincronizadas(lista)) {
       throw OperacaoNaoPermitidaException('Finalizar C3', invId,
           'ainda há tarefa(s) não sincronizada(s)');
+    }
+    // B93: a autoridade é o servidor. Recusada no aparelho não basta: se o
+    // servidor ainda tem item MEU sem resultado, não finaliza.
+    final abertas = (await _linhas(invId)
+            .where('c3_responsavel_uid', isEqualTo: u.uid)
+            .get(const GetOptions(source: Source.server))
+            .timeout(const Duration(seconds: 15)))
+        .docs
+        .where((d) => d.data()['c3_status'] != StatusTarefaC3.sincronizada)
+        .length;
+    if (abertas > 0) {
+      throw OperacaoNaoPermitidaException('Finalizar C3', invId,
+          'há $abertas item(ns) seus ainda sem resultado no servidor; '
+          'atualize a lista e conte de novo');
     }
     await _prontos(invId).doc(u.uid).set({
       'finalizado': true,
