@@ -355,3 +355,8 @@ Substitui o rev12 (que só tinha o item 4).
 - Causa: redistribuição (versão 1 → 2) com o item ainda do mesmo operador. O resultado da versão 1 foi recusado, o aparelho tratou "recusado" como concluído e liberou "Finalizar minha C3" com 0 de 1 sincronizado. Finalizado não baixa mais tarefas (B76) nem recebe na redistribuição (B79) → C3 sem saída.
 - Correção 1: depois de uma recusa, o aparelho rebaixa a lista. Item que continua dele volta para "a contar" na versão nova; item que foi para outro operador segue recusado.
 - Correção 2: "Finalizar minha C3" confere no servidor; com item dele ainda sem resultado, não finaliza.
+
+## C3 rev3 (10/10) — B96
+
+- B96: sem deslizar entre abas em nenhuma contagem (C1/C2 e C3). Troca de aba só tocando na aba.
+- Lógica da TAG na C3 mantida (rev1): só TAG do produto e do lote procurados; outro lote/produto e TAG repetida no item são descartados com sino; cada TAG = 1 cheio, somada na conclusão.

@@ -2322,9 +2322,11 @@ class _CT60PagedLayoutState extends State<_CT60PagedLayout> {
         Expanded(
           child: PageView(
             controller: _pageController,
-            physics: _temLancamentoEmAndamento
-                ? const NeverScrollableScrollPhysics()
-                : const AlwaysScrollableScrollPhysics(),
+            // B96 (Djalma, 10/10): sem deslizar entre abas em nenhuma
+            // contagem. Troca de aba só tocando na aba (evita lançar na aba
+            // errada sem perceber). O bloqueio de troca com lançamento em
+            // andamento continua no toque (_irParaPagina).
+            physics: const NeverScrollableScrollPhysics(),
             onPageChanged: (index) {
               setState(() => _currentPage = index);
 
@@ -6601,7 +6603,10 @@ class _LancamentoC3PageState extends State<LancamentoC3Page> {
                 Tab(icon: Icon(Icons.keyboard, size: 18), text: 'Código'),
               ]),
               Expanded(
-                child: TabBarView(children: [_abaTag(), _formCodigo()]),
+                // B96: sem deslizar; troca de aba só tocando na aba.
+                child: TabBarView(
+                    physics: const NeverScrollableScrollPhysics(),
+                    children: [_abaTag(), _formCodigo()]),
               ),
               _botaoConcluir(),
               if (_gravando) const LinearProgressIndicator(),
