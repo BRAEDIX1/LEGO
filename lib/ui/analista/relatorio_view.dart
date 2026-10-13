@@ -244,7 +244,7 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
                             ? FontWeight.bold
                             : FontWeight.normal,
                         fontSize: t == topo.first ? 14 : 12)),
-              if (a.nome == 'C3' || a.nome.startsWith('Final')) _resumo(),
+              if (a.nome.startsWith('C3') || a.nome.startsWith('Final')) _resumo(),
               Text('${a.dados.length} linha(s)',
                   style: const TextStyle(fontSize: 12, color: Colors.grey)),
             ],
@@ -290,7 +290,7 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
 
   /// Aba C3: pendente em laranja, informativo em cinza.
   Color? _corLinha(AbaRelatorio a, List<Object?> l) {
-    if (a.nome != 'C3') return null;
+    if (a.nome != nomeAbaC3Recontagem) return null;
     final s = l.length > 10 ? '${l[10]}' : '';
     if (s.startsWith('pendente')) return Colors.orange.withValues(alpha: 0.10);
     if (s.startsWith('informativo')) return Colors.grey.withValues(alpha: 0.12);

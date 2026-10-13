@@ -745,3 +745,145 @@ String resultadoCsv(List<LinhaComparativo> linhas, {Natureza? c3Selecionada}) {
   }
   return b.toString();
 }
+
+// ===========================================================================
+// P0 (12/10): C3 CONSOLIDADA por produto — fonte única de verdade.
+//
+// C3 BRUTA  = o que foi recontado numa linha divergente (evidência; fica em
+//             LinhaComparativo.c3 e nunca é alterada aqui).
+// C3 CONSOLIDADA = saldo completo do produto depois da C3:
+//             linha com C1 = C2  → entra pelo consenso (C1);
+//             linha recontada    → entra pelo valor da C3 (substitui C1/C2);
+//             linha pendente     → não há total definitivo (pendente).
+// "Não encontrado" segue a regra vigente: a linha vale o que a C3 registrou
+// (0) — não integra o físico, e a evidência continua na linha.
+// Tela e .xlsx usam SÓ estas funções.
+// ===========================================================================
+
+/// Situação da C3 para um produto.
+enum SituacaoC3Produto {
+  /// Nenhuma linha do produto precisou de C3.
+  naoAplicavel,
+  /// Todas as linhas do produto que foram para a C3 já têm resultado.
+  completa,
+  /// Há linha do produto na C3 ainda sem resultado.
+  pendente,
+  /// Há divergência do produto deixada fora da C3 (consolidado não
+  /// selecionado): não há valor final.
+  semC3,
+}
+
+extension SituacaoC3ProdutoRotulo on SituacaoC3Produto {
+  String get rotulo => switch (this) {
+        SituacaoC3Produto.naoAplicavel => 'não aplicável (sem divergência)',
+        SituacaoC3Produto.completa => 'completa',
+        SituacaoC3Produto.pendente => 'pendente na C3',
+        SituacaoC3Produto.semC3 => 'sem C3 (divergência não recontada)',
+      };
+}
+
+/// Valor da linha depois da C3: consenso, C3 ou null (não resolvida).
+TotaisRodada? valorPosC3(LinhaComparativo l) => l.resolvida ? l.valorFinal : null;
+
+/// Soma de totais (null se nenhum valor). Volume só soma os que existem.
+TotaisRodada? somarTotais(Iterable<TotaisRodada?> ts) {
+  final vs = ts.whereType<TotaisRodada>().toList();
+  if (vs.isEmpty) return null;
+  final vols = vs.map((t) => t.volume).whereType<double>().toList();
+  return TotaisRodada(
+    quantidade: vs.fold(0.0, (s, t) => s + t.quantidade),
+    cheio: vs.fold(0.0, (s, t) => s + t.cheio),
+    vazio: vs.fold(0.0, (s, t) => s + t.vazio),
+    ocorrencias: vs.fold(0, (s, t) => s + t.ocorrencias),
+    volume: vols.isEmpty ? null : vols.fold<double>(0.0, (s, v) => s + v),
+  );
+}
+
+/// Um produto consolidado (todas as linhas dele: locais, lotes, prateleiras).
+class ConsolidadoProduto {
+  final Natureza natureza;
+  final String identificacao;
+  final String descricao;
+  final TotaisRodada? c1;
+  final TotaisRodada? c2;
+  /// Só com [situacao] == completa. Null em todos os outros casos.
+  final TotaisRodada? c3Consolidada;
+  /// Resultado final do produto: C3 consolidada, ou o consenso quando não
+  /// houve C3. Null se pendente ou sem C3.
+  final TotaisRodada? valorFinal;
+  final SituacaoC3Produto situacao;
+  final int linhasConsenso;
+  final int linhasPelaC3;
+  final int linhasPendentes;
+  final int linhasSemC3;
+
+  const ConsolidadoProduto({
+    required this.natureza,
+    required this.identificacao,
+    required this.descricao,
+    required this.c1,
+    required this.c2,
+    required this.c3Consolidada,
+    required this.valorFinal,
+    required this.situacao,
+    required this.linhasConsenso,
+    required this.linhasPelaC3,
+    required this.linhasPendentes,
+    required this.linhasSemC3,
+  });
+}
+
+/// Consolida por produto (natureza + identificação) as linhas de [natureza].
+/// Função pura: não altera [linhas].
+List<ConsolidadoProduto> consolidarPorProduto(
+    List<LinhaComparativo> linhas, Natureza natureza) {
+  final grupos = <String, List<LinhaComparativo>>{};
+  for (final l in linhas.where((l) => l.natureza == natureza)) {
+    grupos.putIfAbsent(l.identificacao, () => []).add(l);
+  }
+  final out = <ConsolidadoProduto>[];
+  for (final e in grupos.entries) {
+    final ls = e.value;
+    final consenso = ls.where((l) => !l.emAnalise).length;
+    final pelaC3 = ls.where((l) => l.contadaNaC3).length;
+    final pendentes = ls.where((l) => l.pendenteAtual).length;
+    final semC3 = ls.where((l) => l.semC3).length;
+    final foiParaC3 = ls.any((l) => l.naC3 || l.contadaNaC3);
+
+    final SituacaoC3Produto sit;
+    if (pendentes > 0) {
+      sit = SituacaoC3Produto.pendente;
+    } else if (semC3 > 0) {
+      sit = SituacaoC3Produto.semC3;
+    } else if (foiParaC3) {
+      sit = SituacaoC3Produto.completa;
+    } else {
+      sit = SituacaoC3Produto.naoAplicavel;
+    }
+
+    final todasResolvidas = ls.every((l) => l.resolvida);
+    final posC3 = todasResolvidas ? somarTotais(ls.map(valorPosC3)) : null;
+    final desc = ls
+        .map((l) => l.descricao)
+        .firstWhere((d) => d.trim().isNotEmpty, orElse: () => '');
+    out.add(ConsolidadoProduto(
+      natureza: natureza,
+      identificacao: e.key,
+      descricao: desc,
+      c1: somarTotais(ls.map((l) => l.c1)),
+      c2: somarTotais(ls.map((l) => l.c2)),
+      c3Consolidada: sit == SituacaoC3Produto.completa ? posC3 : null,
+      valorFinal: (sit == SituacaoC3Produto.completa ||
+              sit == SituacaoC3Produto.naoAplicavel)
+          ? posC3
+          : null,
+      situacao: sit,
+      linhasConsenso: consenso,
+      linhasPelaC3: pelaC3,
+      linhasPendentes: pendentes,
+      linhasSemC3: semC3,
+    ));
+  }
+  out.sort((a, b) => a.identificacao.compareTo(b.identificacao));
+  return out;
+}

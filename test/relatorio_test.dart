@@ -64,7 +64,7 @@ void main() {
     test('abas na ordem do modelo', () {
       expect(abas.map((a) => a.nome).toList(), [
         'C1 Lançamentos', 'C1 Consolidado', 'C2 Lançamentos',
-        'C2 Consolidado', 'C3', 'Final',
+        'C2 Consolidado', 'C3 Consolidado', 'C3 Recontagem', 'Final',
       ]);
     });
     test('Lançamentos: título, fonte, linha em branco e cabeçalho na 4ª linha',
@@ -89,8 +89,8 @@ void main() {
         ['M2', 'DESC M2', 5, '2G2'],
       ]);
     });
-    test('C3: só a divergência, com C1, C2 e C3', () {
-      final a = abas.firstWhere((x) => x.nome == 'C3');
+    test('C3 Recontagem: só a divergência, com C1, C2 e C3 da linha', () {
+      final a = abas.firstWhere((x) => x.nome == 'C3 Recontagem');
       expect(a.dados.length, 1);
       final l = a.dados.single;
       expect(l[1], 'M2');
@@ -130,7 +130,8 @@ void main() {
       expect(abas.map((a) => a.nome).toList(), [
         'C1 Lançamentos', 'C1 Consolidado Cilindros', 'C1 Consolidado Gases',
         'C2 Lançamentos', 'C2 Consolidado Cilindros', 'C2 Consolidado Gases',
-        'C3', 'Final Cilindros', 'Final Gases',
+        'C3 Consolidado Cilindros', 'C3 Consolidado Gases', 'C3 Recontagem',
+        'Final Cilindros', 'Final Gases',
       ]);
     });
     test('Consolidado de gases: lote, cheios e volume contado', () {
@@ -152,7 +153,7 @@ void main() {
       expect(fc.dados.single.last, 'C1 = C2');
       final fg = abas.firstWhere((x) => x.nome == 'Final Gases');
       expect(fg.dados, isEmpty); // gás pendente na C3: ainda não é final
-      final c3 = abas.firstWhere((x) => x.nome == 'C3');
+      final c3 = abas.firstWhere((x) => x.nome == 'C3 Recontagem');
       expect(c3.dados.single[0], 'Gases');
       expect(c3.dados.single[10], 'pendente na C3');
     });
@@ -171,7 +172,7 @@ void main() {
         resumoC2: r2b,
         comparativo: cmpb,
       );
-      final c3 = abasb.firstWhere((x) => x.nome == 'C3');
+      final c3 = abasb.firstWhere((x) => x.nome == 'C3 Recontagem');
       expect(c3.dados.single[10], 'informativo (fora da C3)');
       expect(abasb.firstWhere((x) => x.nome == 'Final Cilindros').dados,
           isEmpty);

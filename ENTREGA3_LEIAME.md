@@ -368,3 +368,11 @@ Substitui o rev12 (que só tinha o item 4).
 - Toque sobre áreas sobrepostas: ganha a menor (uma área dentro de outra continua selecionável).
 - JSON aceita `"rot"` (graus, sentido horário, em torno do centro) para retângulos girados; x/y/w/h são o retângulo antes de girar. O mapa desenha, seleciona e enquadra a área girada; o nome acompanha o giro.
 - O JSON é gerado pelo "Editor de Áreas da Planta" (artifact). O LEGO original ainda não lê `forma` nem `rot`: lá um círculo aparece como quadrado e uma área girada aparece reta.
+
+## P0 (12/10) — C3 consolidada por produto
+
+- Defeito: o relatório só tinha a C3 por LINHA (só as linhas recontadas), na posição de consolidado. Lida como "C3 do produto", mostrava 5 onde o resultado do produto após a C3 é 20 (8 + 7 consenso + 5 recontado).
+- Regra: `consolidarPorProduto` (comparativo.dart), fonte única para tela e .xlsx. Por produto: linha C1 = C2 entra pelo consenso; linha recontada entra pela C3; linha pendente → C3 "pendente" e sem total; divergência fora da C3 → "sem C3" e sem total; produto sem divergência → C3 "não aplicável" (vazia). "Não encontrado" entra como registrado na C3 (0), regra vigente.
+- Relatório: nova aba "C3 Consolidado [tipo]" (C1, C2, C3 consolidada, Final, situação, linhas por consenso/pela C3/pendentes; Gás com volume final). A antiga aba "C3" virou "C3 Recontagem" (evidência por linha, coluna "C3 recontada (linha)", com aviso de que não é o resultado do produto).
+- Dados brutos não são alterados: o cálculo é derivado. Relatórios antigos regenerados já saem corrigidos; a aba traz "Cálculo: C3 consolidada v2 (correção P0 de 12/10/2026)".
+- Testes: `test/c3_consolidado_test.dart` (T-C3-001 a 008 + regras vigentes); `test/relatorio_test.dart` ajustado aos nomes novos.

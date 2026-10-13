@@ -6,7 +6,13 @@
 //
 // Abas:
 //   C1 Lançamentos · C1 Consolidado [tipo] · C2 Lançamentos ·
-//   C2 Consolidado [tipo] · C3 · Final [tipo]
+//   C2 Consolidado [tipo] · C3 Consolidado [tipo] · C3 Recontagem ·
+//   Final [tipo]
+//
+// P0 (12/10): "C3 Consolidado" = saldo completo do PRODUTO após a C3
+// (consenso nas linhas C1 = C2 + C3 nas linhas recontadas), calculado por
+// consolidarPorProduto (comparativo.dart). "C3 Recontagem" = evidência por
+// linha (C3 bruta). Nunca apresentar a C3 bruta como consolidado.
 //
 // Colunas dos consolidados (Djalma, 09/10):
 //   Materiais: Código, Descrição, Quantidade, Prateleira
@@ -166,8 +172,60 @@ int _ordemConsolidado(LinhaComparativo a, LinhaComparativo b) {
 
 const cabecalhoC3 = [
   'Natureza', 'Código', 'Descrição', 'Lote', 'Prateleira', 'Localização',
-  'Divergência', 'C1', 'C2', 'C3', 'Situação', 'Responsável',
+  'Divergência', 'C1', 'C2', 'C3 recontada (linha)', 'Situação', 'Responsável',
 ];
+
+/// Versão da regra da C3 consolidada (aparece no relatório: identifica os
+/// relatórios gerados com a correção P0).
+const versaoCalculoC3 = 'C3 consolidada v2 (correção P0 de 12/10/2026)';
+
+/// Nome da aba de evidência da C3 (linha a linha).
+const nomeAbaC3Recontagem = 'C3 Recontagem';
+
+/// Cabeçalho do consolidado da C3 por produto.
+List<String> cabecalhoC3Consolidado(Natureza n) => [
+      'Código', 'Descrição', 'C1', 'C2', 'C3 consolidada', 'Final',
+      'Situação da C3', 'Linhas por consenso (C1 = C2)', 'Linhas pela C3',
+      'Linhas pendentes ou sem C3',
+      if (n == Natureza.gas) 'Volume final',
+    ];
+
+/// Aba "C3 Consolidado" de uma natureza: um produto por linha, com C1, C2 e
+/// a C3 CONSOLIDADA (consenso + recontagem), nunca a C3 bruta.
+AbaRelatorio abaC3Consolidado({
+  required String nome,
+  required Natureza natureza,
+  required List<LinhaComparativo> linhas,
+}) {
+  final prods = consolidarPorProduto(linhas, natureza);
+  return AbaRelatorio(
+    nome,
+    [
+      ['C3 Consolidado — resultado completo de cada produto após a terceira contagem'],
+      ['Linhas com C1 = C2 entram pelo consenso; linhas recontadas entram pelo '
+          'valor da C3 (substitui C1/C2 nessa linha). C1, C2 e C3 não são somados '
+          'entre si. A recontagem linha a linha está na aba $nomeAbaC3Recontagem.'],
+      ['Métrica: ${natureza.metrica} · Cálculo: $versaoCalculoC3'],
+      [],
+      cabecalhoC3Consolidado(natureza),
+      for (final p in prods)
+        [
+          p.identificacao,
+          p.descricao,
+          _n(p.c1?.quantidade),
+          _n(p.c2?.quantidade),
+          _n(p.c3Consolidada?.quantidade),
+          _n(p.valorFinal?.quantidade),
+          p.situacao.rotulo,
+          p.linhasConsenso,
+          p.linhasPelaC3,
+          p.linhasPendentes + p.linhasSemC3,
+          if (natureza == Natureza.gas) _n(p.valorFinal?.volume),
+        ],
+    ],
+    linhaCabecalho: 4,
+  );
+}
 
 String _motivo(MotivoAnalise? m) => switch (m) {
       MotivoAnalise.soC1 => 'só na C1',
@@ -192,7 +250,11 @@ AbaRelatorio abaC3(List<LinhaComparativo> linhas) {
       final n = a.natureza.index.compareTo(b.natureza.index);
       return n != 0 ? n : _ordemConsolidado(a, b);
     });
-  return AbaRelatorio('C3', [
+  return AbaRelatorio(nomeAbaC3Recontagem, [
+    ['C3 Recontagem — valor recontado em cada linha divergente (evidência)'],
+    ['Esta aba NÃO é o resultado do produto. O resultado completo após a C3 '
+        'está na aba C3 Consolidado.'],
+    [],
     cabecalhoC3,
     for (final l in div)
       [
@@ -209,7 +271,7 @@ AbaRelatorio abaC3(List<LinhaComparativo> linhas) {
         situacaoC3(l),
         l.c3ResponsavelNome ?? l.c3Quem,
       ],
-  ]);
+  ], linhaCabecalho: 3);
 }
 
 /// Aba "Final" de uma natureza: fechadas (C1 = C2) + resolvidas na C3.
@@ -264,6 +326,12 @@ List<AbaRelatorio> montarRelatorio({
       for (final n in naturezas)
         abaConsolidado(nome: nomeCons(r, n), natureza: n, lancs: res),
     ],
+    for (final n in naturezas)
+      abaC3Consolidado(
+        nome: umSo ? 'C3 Consolidado' : 'C3 Consolidado ${n.rotulo}',
+        natureza: n,
+        linhas: comparativo,
+      ),
     abaC3(comparativo),
     for (final n in naturezas)
       abaFinal(
