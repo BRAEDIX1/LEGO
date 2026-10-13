@@ -32,7 +32,15 @@ class AbaRelatorio {
   final String nome;
   final List<List<Object?>> linhas;
   final int linhaCabecalho;
-  const AbaRelatorio(this.nome, this.linhas, {this.linhaCabecalho = 0});
+
+  /// Fórmulas do .xlsx por célula (linha, coluna; base 0, mesmas coordenadas
+  /// de [linhas]), sem o "=". A tela e os testes usam o valor já calculado de
+  /// [linhas]; só o .xlsx grava a fórmula, para que a correção manual da C3
+  /// recalcule as abas de encerramento.
+  final Map<(int, int), String> formulas;
+
+  const AbaRelatorio(this.nome, this.linhas,
+      {this.linhaCabecalho = 0, this.formulas = const {}});
 
   List<Object?> get cabecalho => linhas[linhaCabecalho];
   List<List<Object?>> get dados => linhas.sublist(linhaCabecalho + 1);
@@ -60,6 +68,19 @@ String? _txt(Object? v) {
 
 double? _dbl(Object? v) =>
     v is num ? v.toDouble() : double.tryParse('${v ?? ''}');
+
+String _aspas(String s) => s.replaceAll('"', '""');
+
+/// Número como literal de fórmula (sem notação científica, ponto decimal).
+String _lit(double v) =>
+    v == v.roundToDouble() ? v.toInt().toString() : v.toString();
+
+/// Volume = quantidade × unitário só vira fórmula se reproduz o valor gravado.
+double? _unidadeConfiavel(ConsolidadoProduto p, TotaisRodada? t) {
+  final u = p.volumeUnitario;
+  if (u == null || t == null || t.volume == null) return null;
+  return ((u * t.quantidade) - t.volume!).abs() < 1e-6 ? u : null;
+}
 
 const cabecalhoLancamentos = [
   'Data', 'Hora', 'Localização', 'Código', 'Descrição', 'Unidade',
@@ -203,6 +224,25 @@ AbaRelatorio abaC3Consolidado({
   required List<LinhaComparativo> linhas,
 }) {
   final prods = consolidarPorProduto(linhas, natureza);
+  // Gás: "Final" e "Volume final" são fórmulas no .xlsx. Quem corrige a
+  // "C3 consolidada" à mão vê o Final, o volume e a aba Final se atualizarem.
+  final formulas = <(int, int), String>{};
+  if (natureza == Natureza.gas) {
+    for (var i = 0; i < prods.length; i++) {
+      final p = prods[i];
+      final r = 5 + i; // índice em linhas (cabeçalho = 4)
+      final n = r + 1; // linha do Excel
+      final f = p.c3Consolidada?.quantidade;
+      final base = p.situacao == SituacaoC3Produto.naoAplicavel ? 'D$n' : '""';
+      formulas[(r, 6)] = 'IF(F$n<>"",F$n,$base)';
+      final s0 = _aspas(p.situacao.rotulo);
+      formulas[(r, 7)] = f != null
+          ? 'IF(F$n=${_lit(f)},"$s0","C3 ajustada manualmente")'
+          : 'IF(F$n="","$s0","C3 informada manualmente")';
+      final u = _unidadeConfiavel(p, p.valorFinal);
+      if (u != null) formulas[(r, 11)] = 'IF(G$n="","",G$n*${_lit(u)})';
+    }
+  }
   return AbaRelatorio(
     nome,
     [
@@ -231,6 +271,7 @@ AbaRelatorio abaC3Consolidado({
         ],
     ],
     linhaCabecalho: 4,
+    formulas: formulas,
   );
 }
 
@@ -316,12 +357,27 @@ AbaRelatorio abaFinal({
   required String nome,
   required Natureza natureza,
   required List<LinhaComparativo> linhas,
+  /// Aba "C3 Consolidado" da mesma natureza: o Final do Gás lê dela (fórmula
+  /// no .xlsx), então corrigir a C3 consolidada atualiza o Final sozinho.
+  AbaRelatorio? c3Consolidado,
 }) {
   final dados = <List<Object?>>[];
+  final formulas = <(int, int), String>{};
+  final usarFormula = natureza == Natureza.gas &&
+      c3Consolidado != null &&
+      c3Consolidado.dados.isNotEmpty;
+  final ref = usarFormula ? "'${c3Consolidado.nome}'!" : '';
+  final a = usarFormula ? c3Consolidado.linhaCabecalho + 2 : 0;
+  final z = usarFormula ? c3Consolidado.linhas.length : 0;
+  String rng(String col) => '$ref\$$col\$$a:\$$col\$$z';
   for (final p in consolidarPorProduto(linhas, natureza)) {
     if (p.situacao == SituacaoC3Produto.pendente) continue;
-    final t = p.valorFinal ?? p.parcial; // parcial só com a marca na Origem
+    final final_ = p.valorFinal;
+    final t = final_ ?? p.parcial; // parcial só com a marca na Origem
     if (t == null) continue;
+    final origem = origemProduto(p);
+    final r = 5 + dados.length; // índice em linhas (cabeçalho = 4)
+    final n = r + 1; // linha do Excel
     dados.add([
       p.identificacao,
       p.descricao,
@@ -332,8 +388,17 @@ AbaRelatorio abaFinal({
       },
       p.linhasConsenso,
       p.linhasPelaC3,
-      origemProduto(p),
+      origem,
     ]);
+    if (usarFormula && final_ != null) {
+      final chave = '(${rng('A')}=A$n)*(${rng('C')}=C$n)';
+      formulas[(r, 3)] = 'SUMPRODUCT($chave,${rng('G')})';
+      if (_unidadeConfiavel(p, final_) != null) {
+        formulas[(r, 4)] = 'SUMPRODUCT($chave,${rng('L')})';
+      }
+      formulas[(r, 7)] =
+          'IF(D$n=${_lit(final_.quantidade)},"${_aspas(origem)}","AJUSTE MANUAL DA C3")';
+    }
   }
   return AbaRelatorio(
     nome,
@@ -348,6 +413,7 @@ AbaRelatorio abaFinal({
       ...dados,
     ],
     linhaCabecalho: 4,
+    formulas: formulas,
   );
 }
 
@@ -400,6 +466,14 @@ List<AbaRelatorio> montarRelatorio({
   final umSo = naturezas.length == 1;
   String nomeCons(String r, Natureza n) =>
       umSo ? '$r Consolidado' : '$r Consolidado ${n.rotulo}';
+  final c3Abas = {
+    for (final n in naturezas)
+      n: abaC3Consolidado(
+        nome: umSo ? 'C3 Consolidado' : 'C3 Consolidado ${n.rotulo}',
+        natureza: n,
+        linhas: comparativo,
+      ),
+  };
   final rotuloTipo = tipo?.rotulo ?? 'sem tipo';
   final fonte =
       'Fonte: Firestore | Tipo: $rotuloTipo | Gerado em ${_dataHora(geradoEm)}';
@@ -418,18 +492,14 @@ List<AbaRelatorio> montarRelatorio({
       for (final n in naturezas)
         abaConsolidado(nome: nomeCons(r, n), natureza: n, lancs: res),
     ],
-    for (final n in naturezas)
-      abaC3Consolidado(
-        nome: umSo ? 'C3 Consolidado' : 'C3 Consolidado ${n.rotulo}',
-        natureza: n,
-        linhas: comparativo,
-      ),
+    for (final n in naturezas) c3Abas[n]!,
     abaC3(comparativo),
     for (final n in naturezas)
       abaFinal(
         nome: umSo ? 'Final' : 'Final ${n.rotulo}',
         natureza: n,
         linhas: comparativo,
+        c3Consolidado: c3Abas[n],
       ),
     for (final n in naturezas)
       abaFinalPorLocal(

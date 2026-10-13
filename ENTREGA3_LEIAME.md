@@ -392,3 +392,10 @@ Pedido do Djalma: o resultado final de cada produto e lote = linhas que fecharam
 ### P0 rev2 — formato final (13/10, 2ª parte)
 - Desktop e mobile usam o mesmo caminho (`montarRelatorio` → tela `RelatorioInventarioView` e `.xlsx` por `gerarXlsx`): as duas abas "C3 Consolidado [tipo]" e "Final [tipo]" saem iguais nos dois.
 - Ambas: título, explicação, métrica + carimbo da regra, cabeçalho na 5ª linha; linhas onde a C3 entrou ficam em amarelo (tela e .xlsx, função `linhaComC3`); cabeçalho azul no .xlsx.
+
+### P0 rev4 (13/10) — formato do Djalma + correção manual da C3 com recálculo
+- `relatorio_inventario_xlsx.dart`: "C3 Consolidado [tipo]" e "Final [tipo]" saem no formato definido pelo Djalma (Arial 10, título mesclado, cabeçalho azul 39,6 pt, bordas, linhas com C3 em amarelo, larguras, aba amarela, painel congelado na linha 6, filtro). Cor da aba, painel e filtro são acrescentados no XML (o pacote `excel` não grava); se falhar, o arquivo sai sem esses três detalhes.
+- Gás: no .xlsx, "Final", "Situação da C3" e "Volume final" (C3 Consolidado) e "Cilindros cheios", "Volume contado" e "Origem" (Final) são FÓRMULAS. Corrigir a coluna "C3 consolidada" recalcula tudo; "Origem" passa a "AJUSTE MANUAL DA C3" e a "Situação" a "C3 ajustada manualmente" onde o valor mudou.
+- Não recalculam: "Final por Local" (detalhe por área) e Cilindros (a C3 consolidada é o total cheios + vazios; não dá para repartir).
+- A correção vale para o arquivo .xlsx; os dados do inventário no sistema não mudam.
+- Testes: T-FORM-001..004. Validação das fórmulas no LibreOffice com o inventário 007 real: 5010 células iguais sem edição; com edição de C3, Final/Volume/Origem atualizam.

@@ -1,6 +1,9 @@
 // test/c3_consolidado_test.dart
 // P0 (12/10): C3 CONSOLIDADA por produto × C3 BRUTA por linha.
 // Rodar com: flutter test test/c3_consolidado_test.dart
+import 'dart:convert';
+
+import 'package:archive/archive.dart' show ZipDecoder;
 import 'package:excel/excel.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:lego/services/comparativo.dart';
@@ -288,7 +291,7 @@ void main() {
     expect(v(r, 4), tela.dados.single[4]); // C2 20
     expect(v(r, 5), tela.dados.single[5]); // C3 consolidada 20
     expect(v(r, 5), 20);
-    expect(v(r, 6), tela.dados.single[6]); // Final 20
+    // (Final e Volume final são fórmulas no .xlsx: ver T-FORM.)
   });
 
   test('T-C3-008 — reabrir histórico (dados do Firestore) dá o mesmo resultado',
@@ -299,6 +302,80 @@ void main() {
     expect(b.c3Consolidada!.quantidade, a.c3Consolidada!.quantidade);
     expect(b.c1!.quantidade, a.c1!.quantidade);
     expect(b.c2!.quantidade, a.c2!.quantidade);
+  });
+
+  group('T-FORM — corrigir a C3 consolidada recalcula o encerramento (.xlsx)', () {
+    final ls = [
+      linha('A', 8, 8),
+      linha('B', 7, 7),
+      linha('C', 6, 5, c3: 5),
+      linha('A', 3, 3, cod: 'P2'),
+    ];
+    List<AbaRelatorio> relatorio(List<LinhaComparativo> l) => montarRelatorio(
+          numero: '007',
+          tipo: Natureza.gas,
+          geradoEm: DateTime(2026, 10, 13),
+          lancsC1: const [],
+          lancsC2: const [],
+          resumoC1: const [],
+          resumoC2: const [],
+          comparativo: l,
+        );
+    final abas = relatorio(ls);
+    AbaRelatorio por(String n) => abas.firstWhere((a) => a.nome == n);
+
+    test('T-FORM-001 — C3 Consolidado: Final, Situação e Volume são fórmulas', () {
+      final c3 = por('C3 Consolidado Gases');
+      expect(c3.formulas[(5, 6)], 'IF(F6<>"",F6,"")'); // P1: completa
+      expect(c3.formulas[(6, 6)], 'IF(F7<>"",F7,D7)'); // P2: sem divergência
+      expect(c3.formulas[(5, 7)],
+          'IF(F6=20,"completa","C3 ajustada manualmente")');
+      expect(c3.formulas[(6, 7)],
+          'IF(F7="","não aplicável (sem divergência)","C3 informada manualmente")');
+      expect(c3.formulas[(5, 11)], 'IF(G6="","",G6*10)');
+    });
+
+    test('T-FORM-002 — Final lê a C3 Consolidado por produto + lote', () {
+      final f = por('Final Gases');
+      expect(
+          f.formulas[(5, 3)],
+          r"SUMPRODUCT(('C3 Consolidado Gases'!$A$6:$A$7=A6)*('C3 Consolidado Gases'!$C$6:$C$7=C6),'C3 Consolidado Gases'!$G$6:$G$7)");
+      expect(f.formulas[(5, 4)], contains(r"'C3 Consolidado Gases'!$L$6:$L$7"));
+      expect(f.formulas[(5, 7)],
+          'IF(D6=20,"C1 = C2 + C3","AJUSTE MANUAL DA C3")');
+    });
+
+    test('T-FORM-003 — parcial (fora da C3) fica sem fórmula no Final', () {
+      final f = abaFinal(
+        nome: 'Final Gases',
+        natureza: Natureza.gas,
+        linhas: [linha('A', 8, 8), linha('C', 6, 5, foraDaC3: true)],
+        c3Consolidado: abaC3Consolidado(
+            nome: 'C3 Consolidado Gases',
+            natureza: Natureza.gas,
+            linhas: [linha('A', 8, 8), linha('C', 6, 5, foraDaC3: true)]),
+      );
+      expect(f.dados.single.last, startsWith('PARCIAL'));
+      expect(f.formulas, isEmpty);
+    });
+
+    test('T-FORM-004 — .xlsx grava fórmulas, cor da aba, painel e filtro', () {
+      final bytes = gerarXlsx(abas)!;
+      final zip = ZipDecoder().decodeBytes(bytes);
+      final xml = [
+        for (final f in zip.files)
+          if (f.name.startsWith('xl/worksheets/') && f.name.endsWith('.xml'))
+            utf8.decode(f.content as List<int>),
+      ].join('\n');
+      expect(xml, contains('<f>SUMPRODUCT('));
+      expect(xml, contains('<f>IF(F6'));
+      expect(xml, contains('<tabColor rgb="FFFFFFCC"/>'));
+      expect(xml, contains('state="frozen"'));
+      expect(xml, contains('<autoFilter ref="A5:L7"/>')); // C3 Consolidado
+      expect(xml, contains('<autoFilter ref="A5:H7"/>')); // Final
+      // continua sendo um .xlsx legível
+      expect(Excel.decodeBytes(bytes).tables.keys, contains('Final Gases'));
+    });
   });
 
   group('regras vigentes preservadas', () {

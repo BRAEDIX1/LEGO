@@ -814,6 +814,9 @@ class ConsolidadoProduto {
   final String identificacao;
   /// Gás: lote do consolidado. Material: prateleira (em [prateleira]).
   final String? lote;
+  /// Gás: volume de um cilindro do produto (para o volume final recalculável
+  /// no .xlsx). Null se não der para determinar com segurança.
+  final double? volumeUnitario;
   final String prateleira;
   final String descricao;
   final TotaisRodada? c1;
@@ -836,6 +839,7 @@ class ConsolidadoProduto {
     required this.natureza,
     required this.identificacao,
     this.lote,
+    this.volumeUnitario,
     this.prateleira = '',
     required this.descricao,
     required this.c1,
@@ -849,6 +853,23 @@ class ConsolidadoProduto {
     required this.linhasPendentes,
     required this.linhasSemC3,
   });
+}
+
+/// Volume de um cilindro do produto: o da linha, ou volume ÷ quantidade dos
+/// totais. Arredondado em 6 casas (evita 7,0000000001 na fórmula do .xlsx).
+double? _volumeUnitario(List<LinhaComparativo> ls) {
+  for (final l in ls) {
+    final v = l.volumeUnitario;
+    if (v != null && v > 0) return double.parse(v.toStringAsFixed(6));
+  }
+  for (final l in ls) {
+    for (final t in [l.valorFinal, l.c1, l.c2, l.c3]) {
+      if (t != null && t.quantidade > 0 && t.volume != null) {
+        return double.parse((t.volume! / t.quantidade).toStringAsFixed(6));
+      }
+    }
+  }
+  return null;
 }
 
 /// Consolida as linhas de [natureza] por [LinhaComparativo.chaveConsolidacao]
@@ -889,6 +910,7 @@ List<ConsolidadoProduto> consolidarPorProduto(
       natureza: natureza,
       identificacao: ls.first.identificacao,
       lote: natureza == Natureza.gas ? ls.first.lote : null,
+      volumeUnitario: natureza == Natureza.gas ? _volumeUnitario(ls) : null,
       prateleira: natureza == Natureza.material ? ls.first.prateleira : '',
       descricao: desc,
       c1: somarTotais(ls.map((l) => l.c1)),
