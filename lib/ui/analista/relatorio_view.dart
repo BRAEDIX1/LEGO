@@ -290,6 +290,11 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
 
   /// Aba C3: pendente em laranja, informativo em cinza.
   Color? _corLinha(AbaRelatorio a, List<Object?> l) {
+    if (a.nome.startsWith('Final') && !a.nome.startsWith('Final por Local') &&
+        l.isNotEmpty && '${l.last}'.startsWith('PARCIAL')) {
+      return Colors.orange.withValues(alpha: 0.18);
+    }
+    if (linhaComC3(a, l)) return const Color(0xFFFFF2CC); // C3 entrou
     if (a.nome != nomeAbaC3Recontagem) return null;
     final s = l.length > 10 ? '${l[10]}' : '';
     if (s.startsWith('pendente')) return Colors.orange.withValues(alpha: 0.10);

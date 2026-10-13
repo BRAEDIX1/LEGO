@@ -376,3 +376,19 @@ Substitui o rev12 (que só tinha o item 4).
 - Relatório: nova aba "C3 Consolidado [tipo]" (C1, C2, C3 consolidada, Final, situação, linhas por consenso/pela C3/pendentes; Gás com volume final). A antiga aba "C3" virou "C3 Recontagem" (evidência por linha, coluna "C3 recontada (linha)", com aviso de que não é o resultado do produto).
 - Dados brutos não são alterados: o cálculo é derivado. Relatórios antigos regenerados já saem corrigidos; a aba traz "Cálculo: C3 consolidada v2 (correção P0 de 12/10/2026)".
 - Testes: `test/c3_consolidado_test.dart` (T-C3-001 a 008 + regras vigentes); `test/relatorio_test.dart` ajustado aos nomes novos.
+
+
+## P0 rev2 (13/10/2026) — aba Final por produto + lote
+
+Pedido do Djalma: o resultado final de cada produto e lote = linhas que fecharam (C1 = C2) + o que a C3 encontrou nas que divergiram, somando todos os locais.
+
+- `Final [tipo]`: UMA linha por produto e lote (Gás); Cilindro por produto/família; Material por código + prateleira. Colunas Gás: Código, Descrição, Lote, Cilindros cheios, Volume contado, Linhas por consenso, Linhas pela C3, Origem (`C1 = C2`, `C1 = C2 + C3`, `C3`).
+- Lote com C3 pendente não entra no Final. Lote com divergência fora da C3 aparece só como `PARCIAL: ...` (laranja na tela).
+- `Final por Local [tipo]` (nova): o final linha a linha (produto + lote + local), como era a antiga aba Final.
+- `C3 Consolidado [tipo]`: agora por produto + lote (coluna Lote em Gás, Prateleira em Material).
+- Carimbo: `C3 consolidada v3 (correção P0 de 13/10/2026: produto + lote)`.
+- Arquivos: `comparativo.dart` (chaveConsolidacao, ConsolidadoProduto.lote/prateleira/parcial), `relatorio_inventario.dart` (abaFinal, abaFinalPorLocal), `relatorio_view.dart` (cor PARCIAL), testes `c3_consolidado_test.dart` (T-FIN-001..007) e `relatorio_test.dart`.
+
+### P0 rev2 — formato final (13/10, 2ª parte)
+- Desktop e mobile usam o mesmo caminho (`montarRelatorio` → tela `RelatorioInventarioView` e `.xlsx` por `gerarXlsx`): as duas abas "C3 Consolidado [tipo]" e "Final [tipo]" saem iguais nos dois.
+- Ambas: título, explicação, métrica + carimbo da regra, cabeçalho na 5ª linha; linhas onde a C3 entrou ficam em amarelo (tela e .xlsx, função `linhaComC3`); cabeçalho azul no .xlsx.

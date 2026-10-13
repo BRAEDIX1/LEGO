@@ -44,9 +44,21 @@ LinhaComparativo linha(
 Map<String, dynamic> doc(LinhaComparativo l) =>
     {...l.toMap(), if (l.c3 != null) 'c3': l.c3!.toMap()};
 
-ConsolidadoProduto prod(List<LinhaComparativo> ls, [String cod = 'P1']) =>
+ConsolidadoProduto prod(List<LinhaComparativo> ls,
+        [String cod = 'P1', String lote = 'L1']) =>
     consolidarPorProduto(ls, Natureza.gas)
-        .firstWhere((p) => p.identificacao == cod);
+        .firstWhere((p) => p.identificacao == cod && p.lote == lote);
+
+AbaRelatorio aba(List<LinhaComparativo> ls, String nome) => montarRelatorio(
+      numero: '007',
+      tipo: Natureza.gas,
+      geradoEm: DateTime(2026, 10, 13),
+      lancsC1: const [],
+      lancsC2: const [],
+      resumoC1: const [],
+      resumoC2: const [],
+      comparativo: ls,
+    ).firstWhere((a) => a.nome == nome || a.nome == '$nome Gases');
 
 void main() {
   group('T-C3-001 — caso oficial mínimo (8/8, 7/7, 6/5→5)', () {
@@ -68,9 +80,9 @@ void main() {
     test('relatório: C3 Consolidado mostra 20; C3 Recontagem mostra 5', () {
       final cons = abaC3Consolidado(
           nome: 'C3 Consolidado', natureza: Natureza.gas, linhas: ls);
-      expect(cons.cabecalho[4], 'C3 consolidada');
-      expect(cons.dados.single.sublist(0, 10),
-          ['P1', 'DESC P1', 21, 20, 20, 20, 'completa', 2, 1, 0]);
+      expect(cons.cabecalho[5], 'C3 consolidada');
+      expect(cons.dados.single.sublist(0, 11),
+          ['P1', 'DESC P1', 'L1', 21, 20, 20, 20, 'completa', 2, 1, 0]);
       final rec = abaC3(ls);
       expect(rec.nome, 'C3 Recontagem');
       expect(rec.cabecalho[9], 'C3 recontada (linha)');
@@ -99,7 +111,7 @@ void main() {
         nome: 'C3 Consolidado',
         natureza: Natureza.gas,
         linhas: [linha('A', 8, 8), linha('B', 7, 7)]);
-    expect(cons.dados.single[4], isNull); // coluna C3 consolidada vazia
+    expect(cons.dados.single[5], isNull); // coluna C3 consolidada vazia
   });
 
   test('T-C3-004 — C3 pendente: nada de soma parcial como definitiva', () {
@@ -114,23 +126,111 @@ void main() {
     expect(p.linhasPendentes, 1);
   });
 
-  test('T-C3-005 — vários lotes e locais: só as recontadas são trocadas', () {
+  test('T-C3-005 — vários lotes e locais: cada lote tem o seu resultado', () {
     final ls = [
       linha('A', 10, 10, lote: 'L1'),
       linha('A', 4, 3, lote: 'L2', c3: 3),
       linha('B', 5, 6, lote: 'L1', c3: 6),
       linha('B', 2, 2, lote: 'L2'),
     ];
-    final p = prod(ls);
-    expect(p.c1!.quantidade, 21);
-    expect(p.c2!.quantidade, 21);
-    expect(p.c3Consolidada!.quantidade, 10 + 3 + 6 + 2);
-    expect(p.linhasConsenso, 2);
-    expect(p.linhasPelaC3, 2);
+    final l1 = prod(ls, 'P1', 'L1'), l2 = prod(ls, 'P1', 'L2');
+    expect(l1.c1!.quantidade, 15);
+    expect(l1.c2!.quantidade, 16);
+    expect(l1.c3Consolidada!.quantidade, 10 + 6);
+    expect(l2.c1!.quantidade, 6);
+    expect(l2.c2!.quantidade, 5);
+    expect(l2.c3Consolidada!.quantidade, 3 + 2);
+    expect(l1.linhasConsenso, 1);
+    expect(l1.linhasPelaC3, 1);
     // produto separado não se mistura
     final outro = consolidarPorProduto(
         [...ls, linha('A', 1, 1, cod: 'P2')], Natureza.gas);
-    expect(outro.map((x) => x.identificacao), ['P1', 'P2']);
+    expect(outro.map((x) => '${x.identificacao}/${x.lote}'),
+        ['P1/L1', 'P1/L2', 'P2/L1']);
+  });
+
+  group('T-FIN — aba Final: produto + lote = consenso + C3 (13/10)', () {
+    test('T-FIN-001 — 8 + 7 + 5 = 20 numa única linha do Final', () {
+      final f = aba([linha('A', 8, 8), linha('B', 7, 7), linha('C', 6, 5, c3: 5)],
+          'Final');
+      expect(f.cabecalho, [
+        'Código', 'Descrição', 'Lote', 'Cilindros cheios', 'Volume contado',
+        'Linhas por consenso (C1 = C2)', 'Linhas pela C3', 'Origem',
+      ]);
+      expect(f.dados, [
+        ['P1', 'DESC P1', 'L1', 20, 200, 2, 1, 'C1 = C2 + C3'],
+      ]);
+    });
+    test('T-FIN-002 — lotes diferentes do mesmo produto: uma linha por lote',
+        () {
+      final f = aba([
+        linha('A', 10, 10, lote: 'L1'),
+        linha('B', 5, 6, lote: 'L1', c3: 6),
+        linha('A', 4, 3, lote: 'L2', c3: 3),
+        linha('B', 2, 2, lote: 'L2'),
+      ], 'Final');
+      expect(f.dados.map((r) => [r[2], r[3]]), [
+        ['L1', 16],
+        ['L2', 5],
+      ]);
+    });
+    test('T-FIN-003 — lote com C3 pendente não entra no Final', () {
+      final f = aba([linha('A', 8, 8), linha('B', 7, 6)], 'Final');
+      expect(f.dados, isEmpty);
+    });
+    test('T-FIN-004 — lote sem divergência: consenso, origem C1 = C2', () {
+      final f = aba([linha('A', 8, 8), linha('B', 7, 7)], 'Final');
+      expect(f.dados.single[3], 15);
+      expect(f.dados.single.last, 'C1 = C2');
+    });
+    test('T-FIN-005 — divergência fora da C3: só PARCIAL, marcado', () {
+      final f = aba(
+          [linha('A', 8, 8), linha('C', 6, 5, foraDaC3: true)], 'Final');
+      expect(f.dados.single[3], 8);
+      expect(f.dados.single.last, startsWith('PARCIAL'));
+    });
+    test('T-FIN-006 — "Final por Local" mantém o detalhe linha a linha', () {
+      final f = aba([linha('A', 8, 8), linha('B', 7, 7), linha('C', 6, 5, c3: 5)],
+          'Final por Local');
+      expect(f.dados.map((r) => [r[5], r[3], r.last]), [
+        ['AREA_A', 8, 'C1 = C2'],
+        ['AREA_B', 7, 'C1 = C2'],
+        ['AREA_C', 5, 'C3'],
+      ]);
+    });
+    test('T-FIN-008 — Final tem título e cabeçalho na 5ª linha; destaque só onde a C3 entrou',
+        () {
+      final ls = [
+        linha('A', 8, 8),
+        linha('B', 7, 7),
+        linha('C', 6, 5, c3: 5),
+        linha('A', 3, 3, cod: 'P2'),
+      ];
+      final f = aba(ls, 'Final');
+      expect(f.linhaCabecalho, 4);
+      expect(f.linhas[0].first, contains('resultado final por produto e lote'));
+      final destacadas = [for (final r in f.dados) linhaComC3(f, r)];
+      expect(destacadas, [true, false]); // P1/L1 teve C3; P2/L1 não
+      final c = aba(ls, 'C3 Consolidado');
+      expect([for (final r in c.dados) linhaComC3(c, r)], [true, false]);
+      // abas de detalhe nunca são destacadas
+      final d = aba(ls, 'C3 Recontagem');
+      expect([for (final r in d.dados) linhaComC3(d, r)], [false]);
+    });
+    test('T-FIN-007 — soma do Final = soma da C3 Consolidado (gás)', () {
+      final ls = [
+        linha('A', 8, 8),
+        linha('B', 7, 7),
+        linha('C', 6, 5, c3: 5),
+        linha('A', 3, 3, cod: 'P2'),
+      ];
+      final fin = aba(ls, 'Final').dados.fold<num>(0, (s, r) => s + (r[3] as num));
+      final cons = aba(ls, 'C3 Consolidado')
+          .dados
+          .fold<num>(0, (s, r) => s + (r[6] as num));
+      expect(fin, cons);
+      expect(fin, 23);
+    });
   });
 
   test('T-C3-006 — evidência bruta intacta depois de consolidar', () {
@@ -183,11 +283,12 @@ void main() {
 
     final r = tela.linhaCabecalho + 1;
     expect(v(r, 0), 'P1');
-    expect(v(r, 2), tela.dados.single[2]); // C1 21
-    expect(v(r, 3), tela.dados.single[3]); // C2 20
-    expect(v(r, 4), tela.dados.single[4]); // C3 consolidada 20
-    expect(v(r, 4), 20);
-    expect(v(r, 5), tela.dados.single[5]); // Final 20
+    expect(v(r, 2), 'L1'); // lote
+    expect(v(r, 3), tela.dados.single[3]); // C1 21
+    expect(v(r, 4), tela.dados.single[4]); // C2 20
+    expect(v(r, 5), tela.dados.single[5]); // C3 consolidada 20
+    expect(v(r, 5), 20);
+    expect(v(r, 6), tela.dados.single[6]); // Final 20
   });
 
   test('T-C3-008 — reabrir histórico (dados do Firestore) dá o mesmo resultado',

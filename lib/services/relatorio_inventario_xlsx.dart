@@ -22,21 +22,39 @@ List<int>? gerarXlsx(List<AbaRelatorio> abas) {
   final excel = Excel.createExcel();
   final padrao = excel.getDefaultSheet();
   final negrito = CellStyle(bold: true);
+  final cabecalho = CellStyle(
+    bold: true,
+    fontColorHex: ExcelColor.fromHexString('#FFFFFF'),
+    backgroundColorHex: ExcelColor.fromHexString('#1F4E78'),
+  );
+  final destaqueC3 =
+      CellStyle(backgroundColorHex: ExcelColor.fromHexString('#FFF2CC'));
 
   for (final aba in abas) {
     final sheet = excel[aba.nome];
     // Posição explícita (updateCell): linha em branco do modelo não some.
     for (var r = 0; r < aba.linhas.length; r++) {
-      final titulo = r == aba.linhaCabecalho ||
-          (r == 0 && aba.linhaCabecalho > 0);
+      final ehCabecalho = r == aba.linhaCabecalho;
+      final titulo = ehCabecalho || (r == 0 && aba.linhaCabecalho > 0);
       final linha = aba.linhas[r];
+      final comC3 = r > aba.linhaCabecalho && linhaComC3(aba, linha);
+      final cabecalhoAzul = ehCabecalho &&
+          (aba.nome.startsWith('Final') || aba.nome.startsWith('C3 Consolidado'));
+      final estilo = cabecalhoAzul
+          ? cabecalho
+          : titulo
+              ? negrito
+              : comC3
+                  ? destaqueC3
+                  : null;
       for (var c = 0; c < linha.length; c++) {
-        final v = _celula(linha[c]);
+        // Célula vazia de linha destacada recebe texto vazio só para pintar.
+        final v = _celula(linha[c]) ?? (comC3 ? TextCellValue('') : null);
         if (v == null) continue;
         sheet.updateCell(
           CellIndex.indexByColumnRow(columnIndex: c, rowIndex: r),
           v,
-          cellStyle: titulo ? negrito : null,
+          cellStyle: estilo,
         );
       }
     }

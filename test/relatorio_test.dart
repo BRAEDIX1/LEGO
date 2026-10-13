@@ -65,6 +65,7 @@ void main() {
       expect(abas.map((a) => a.nome).toList(), [
         'C1 Lançamentos', 'C1 Consolidado', 'C2 Lançamentos',
         'C2 Consolidado', 'C3 Consolidado', 'C3 Recontagem', 'Final',
+        'Final por Local',
       ]);
     });
     test('Lançamentos: título, fonte, linha em branco e cabeçalho na 4ª linha',
@@ -132,6 +133,7 @@ void main() {
         'C2 Lançamentos', 'C2 Consolidado Cilindros', 'C2 Consolidado Gases',
         'C3 Consolidado Cilindros', 'C3 Consolidado Gases', 'C3 Recontagem',
         'Final Cilindros', 'Final Gases',
+        'Final por Local Cilindros', 'Final por Local Gases',
       ]);
     });
     test('Consolidado de gases: lote, cheios e volume contado', () {

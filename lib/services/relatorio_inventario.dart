@@ -7,7 +7,7 @@
 // Abas:
 //   C1 Lançamentos · C1 Consolidado [tipo] · C2 Lançamentos ·
 //   C2 Consolidado [tipo] · C3 Consolidado [tipo] · C3 Recontagem ·
-//   Final [tipo]
+//   Final [tipo] · Final por Local [tipo]
 //
 // P0 (12/10): "C3 Consolidado" = saldo completo do PRODUTO após a C3
 // (consenso nas linhas C1 = C2 + C3 nas linhas recontadas), calculado por
@@ -20,8 +20,10 @@
 //              Localização
 //   Cilindros: Código, Descrição, Cheios, Vazios, Localização
 //
-// Final = linhas fechadas (C1 = C2) + o que a C3 resolveu. Divergências que
-// não passaram pela C3 (informativas) ficam só na aba C3, marcadas.
+// Final = UMA linha por produto e lote (Gás), somando os locais: linhas
+// fechadas (C1 = C2) + o que a C3 encontrou nas que divergiram. "Final por
+// Local" = o mesmo, linha a linha. Divergências fora da C3 aparecem só como
+// PARCIAL (marcado na Origem) e na aba C3 Recontagem.
 
 import 'package:lego/services/comparativo.dart';
 
@@ -177,14 +179,17 @@ const cabecalhoC3 = [
 
 /// Versão da regra da C3 consolidada (aparece no relatório: identifica os
 /// relatórios gerados com a correção P0).
-const versaoCalculoC3 = 'C3 consolidada v2 (correção P0 de 12/10/2026)';
+const versaoCalculoC3 = 'C3 consolidada v3 (correção P0 de 13/10/2026: produto + lote)';
 
 /// Nome da aba de evidência da C3 (linha a linha).
 const nomeAbaC3Recontagem = 'C3 Recontagem';
 
 /// Cabeçalho do consolidado da C3 por produto.
 List<String> cabecalhoC3Consolidado(Natureza n) => [
-      'Código', 'Descrição', 'C1', 'C2', 'C3 consolidada', 'Final',
+      'Código', 'Descrição',
+      if (n == Natureza.gas) 'Lote',
+      if (n == Natureza.material) 'Prateleira',
+      'C1', 'C2', 'C3 consolidada', 'Final',
       'Situação da C3', 'Linhas por consenso (C1 = C2)', 'Linhas pela C3',
       'Linhas pendentes ou sem C3',
       if (n == Natureza.gas) 'Volume final',
@@ -212,6 +217,8 @@ AbaRelatorio abaC3Consolidado({
         [
           p.identificacao,
           p.descricao,
+          if (natureza == Natureza.gas) p.lote,
+          if (natureza == Natureza.material) p.prateleira,
           _n(p.c1?.quantidade),
           _n(p.c2?.quantidade),
           _n(p.c3Consolidada?.quantidade),
@@ -274,8 +281,93 @@ AbaRelatorio abaC3(List<LinhaComparativo> linhas) {
   ], linhaCabecalho: 3);
 }
 
-/// Aba "Final" de uma natureza: fechadas (C1 = C2) + resolvidas na C3.
+/// Cabeçalho da aba Final (resultado por produto e lote).
+List<String> cabecalhoFinal(Natureza n) => switch (n) {
+      Natureza.material => [
+          'Código', 'Descrição', 'Quantidade', 'Prateleira',
+          'Linhas por consenso (C1 = C2)', 'Linhas pela C3', 'Origem',
+        ],
+      Natureza.gas => [
+          'Código', 'Descrição', 'Lote', 'Cilindros cheios', 'Volume contado',
+          'Linhas por consenso (C1 = C2)', 'Linhas pela C3', 'Origem',
+        ],
+      Natureza.cilindro => [
+          'Código', 'Descrição', 'Cheios', 'Vazios',
+          'Linhas por consenso (C1 = C2)', 'Linhas pela C3', 'Origem',
+        ],
+    };
+
+/// Origem do valor final de um produto/lote.
+String origemProduto(ConsolidadoProduto p) {
+  if (p.situacao == SituacaoC3Produto.semC3) {
+    return 'PARCIAL: divergência fora da C3 não incluída';
+  }
+  if (p.linhasPelaC3 == 0) return 'C1 = C2';
+  if (p.linhasConsenso == 0) return 'C3';
+  return 'C1 = C2 + C3';
+}
+
+/// Aba "Final" de uma natureza: UMA linha por produto e lote (Gás), com o
+/// resultado final = linhas que fecharam (C1 = C2) + o que a C3 encontrou nas
+/// linhas que divergiram, somando todos os locais. Produto/lote com C3
+/// pendente não entra (ainda não é final). O detalhe por local está em
+/// "Final por Local".
 AbaRelatorio abaFinal({
+  required String nome,
+  required Natureza natureza,
+  required List<LinhaComparativo> linhas,
+}) {
+  final dados = <List<Object?>>[];
+  for (final p in consolidarPorProduto(linhas, natureza)) {
+    if (p.situacao == SituacaoC3Produto.pendente) continue;
+    final t = p.valorFinal ?? p.parcial; // parcial só com a marca na Origem
+    if (t == null) continue;
+    dados.add([
+      p.identificacao,
+      p.descricao,
+      ...switch (natureza) {
+        Natureza.material => [_n(t.quantidade), p.prateleira],
+        Natureza.gas => [p.lote, _n(t.quantidade), _n(t.volume)],
+        Natureza.cilindro => [_n(t.cheio), _n(t.vazio)],
+      },
+      p.linhasConsenso,
+      p.linhasPelaC3,
+      origemProduto(p),
+    ]);
+  }
+  return AbaRelatorio(
+    nome,
+    [
+      ['Final ${natureza.rotulo} — resultado final por produto e lote'],
+      ['Final = linhas que fecharam (C1 = C2) + o valor da C3 nas linhas que '
+          'divergiram, somando todos os locais. O detalhe por local está em '
+          'Final por Local.'],
+      ['Métrica: ${natureza.metrica} · Cálculo: $versaoCalculoC3'],
+      [],
+      cabecalhoFinal(natureza),
+      ...dados,
+    ],
+    linhaCabecalho: 4,
+  );
+}
+
+/// A linha (de "C3 Consolidado" ou "Final") teve a C3 entrando no resultado?
+/// Usada para destacar a linha na tela e no .xlsx (mesma regra nos dois).
+bool linhaComC3(AbaRelatorio a, List<Object?> linha) {
+  if (!(a.nome.startsWith('C3 Consolidado') ||
+      (a.nome.startsWith('Final') && !a.nome.startsWith('Final por Local')))) {
+    return false;
+  }
+  final i = a.cabecalho.indexOf('Linhas pela C3');
+  if (i < 0 || i >= linha.length) return false;
+  final v = linha[i];
+  return v is num && v > 0;
+}
+
+/// Aba "Final por Local": o final linha a linha (produto + lote + local),
+/// fechadas (C1 = C2) + resolvidas na C3. Detalhe; o resultado do produto/lote
+/// está em "Final".
+AbaRelatorio abaFinalPorLocal({
   required String nome,
   required Natureza natureza,
   required List<LinhaComparativo> linhas,
@@ -336,6 +428,12 @@ List<AbaRelatorio> montarRelatorio({
     for (final n in naturezas)
       abaFinal(
         nome: umSo ? 'Final' : 'Final ${n.rotulo}',
+        natureza: n,
+        linhas: comparativo,
+      ),
+    for (final n in naturezas)
+      abaFinalPorLocal(
+        nome: umSo ? 'Final por Local' : 'Final por Local ${n.rotulo}',
         natureza: n,
         linhas: comparativo,
       ),

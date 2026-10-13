@@ -302,6 +302,15 @@ class LinhaComparativo {
 
   String get localFinal => localNome ?? localId ?? '';
 
+  /// Chave do resultado consolidado (relatório): Gás = produto + lote
+  /// (somando todos os locais); Material = código + prateleira; Cilindro =
+  /// produto/família. A C3 é sempre somada dentro desta chave.
+  String get chaveConsolidacao => switch (natureza) {
+        Natureza.gas => '$codigo|${lote ?? ''}',
+        Natureza.material => '$codigo|$prateleira',
+        Natureza.cilindro => identificacao,
+      };
+
   /// Nome do item para tela e planilha.
   String get identificacao => switch (natureza) {
         Natureza.cilindro =>
@@ -803,9 +812,15 @@ TotaisRodada? somarTotais(Iterable<TotaisRodada?> ts) {
 class ConsolidadoProduto {
   final Natureza natureza;
   final String identificacao;
+  /// Gás: lote do consolidado. Material: prateleira (em [prateleira]).
+  final String? lote;
+  final String prateleira;
   final String descricao;
   final TotaisRodada? c1;
   final TotaisRodada? c2;
+  /// Soma das linhas já resolvidas (consenso + C3), mesmo com divergência
+  /// fora da C3. Só para exibir como PARCIAL, nunca como final.
+  final TotaisRodada? parcial;
   /// Só com [situacao] == completa. Null em todos os outros casos.
   final TotaisRodada? c3Consolidada;
   /// Resultado final do produto: C3 consolidada, ou o consenso quando não
@@ -820,9 +835,12 @@ class ConsolidadoProduto {
   const ConsolidadoProduto({
     required this.natureza,
     required this.identificacao,
+    this.lote,
+    this.prateleira = '',
     required this.descricao,
     required this.c1,
     required this.c2,
+    this.parcial,
     required this.c3Consolidada,
     required this.valorFinal,
     required this.situacao,
@@ -833,13 +851,14 @@ class ConsolidadoProduto {
   });
 }
 
-/// Consolida por produto (natureza + identificação) as linhas de [natureza].
+/// Consolida as linhas de [natureza] por [LinhaComparativo.chaveConsolidacao]
+/// (Gás: produto + lote, somando os locais).
 /// Função pura: não altera [linhas].
 List<ConsolidadoProduto> consolidarPorProduto(
     List<LinhaComparativo> linhas, Natureza natureza) {
   final grupos = <String, List<LinhaComparativo>>{};
   for (final l in linhas.where((l) => l.natureza == natureza)) {
-    grupos.putIfAbsent(l.identificacao, () => []).add(l);
+    grupos.putIfAbsent(l.chaveConsolidacao, () => []).add(l);
   }
   final out = <ConsolidadoProduto>[];
   for (final e in grupos.entries) {
@@ -868,10 +887,13 @@ List<ConsolidadoProduto> consolidarPorProduto(
         .firstWhere((d) => d.trim().isNotEmpty, orElse: () => '');
     out.add(ConsolidadoProduto(
       natureza: natureza,
-      identificacao: e.key,
+      identificacao: ls.first.identificacao,
+      lote: natureza == Natureza.gas ? ls.first.lote : null,
+      prateleira: natureza == Natureza.material ? ls.first.prateleira : '',
       descricao: desc,
       c1: somarTotais(ls.map((l) => l.c1)),
       c2: somarTotais(ls.map((l) => l.c2)),
+      parcial: somarTotais(ls.map(valorPosC3)),
       c3Consolidada: sit == SituacaoC3Produto.completa ? posC3 : null,
       valorFinal: (sit == SituacaoC3Produto.completa ||
               sit == SituacaoC3Produto.naoAplicavel)
@@ -884,6 +906,11 @@ List<ConsolidadoProduto> consolidarPorProduto(
       linhasSemC3: semC3,
     ));
   }
-  out.sort((a, b) => a.identificacao.compareTo(b.identificacao));
+  out.sort((a, b) {
+    final c = a.identificacao.compareTo(b.identificacao);
+    if (c != 0) return c;
+    final l = (a.lote ?? '').compareTo(b.lote ?? '');
+    return l != 0 ? l : a.prateleira.compareTo(b.prateleira);
+  });
   return out;
 }
