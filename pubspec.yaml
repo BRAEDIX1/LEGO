@@ -1,7 +1,6 @@
 name: lego
 description: App com suporte offline-first via Hive + sincronização Firestore
 publish_to: "none"
-<<<<<<< HEAD
 version: 1.4.1+40
 
 environment:
