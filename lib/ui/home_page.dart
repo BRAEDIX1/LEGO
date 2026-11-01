@@ -24,6 +24,7 @@ import 'package:lego/models/sessao_contagem.dart';
 import 'package:lego/services/compatibilidade_service.dart';
 import 'package:lego/services/mobile_sync_service.dart';
 import 'package:lego/ui/mobile/screens/modo_operacao_screen.dart';
+import 'package:lego/ui/mobile/screens/pendencias_sync_screen.dart';
 import 'package:lego/services/c3.dart'
     show TarefaC3Local, resultadoC3, campoC3Para, CampoC3;
 import 'package:lego/services/c3_service.dart' show C3Service;
@@ -3335,6 +3336,7 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    _observarPendenciasEnvio();
     _codigoCtrl.addListener(_onCodigoChanged);
     _barrasCtrl.addListener(_onBarrasChanged);
 
@@ -3431,6 +3433,10 @@ class _HomePageState extends State<HomePage> {
   StreamSubscription<List<LancLocal>>? _pendSub;
   int _naoSincronizados = 0; // pendentes de envio
   int _comErro = 0; // recusados pelo servidor: não somem sozinhos
+  /// Pacote 1: lançamentos do usuário ainda não sincronizados (qualquer
+  /// escopo, inclusive Contagem Simples), para o ícone "Pendências de envio".
+  int _pendenciasEnvio = 0;
+  StreamSubscription<int>? _pendGeralSub;
 
   void _observarPendentes() {
     _pendSub?.cancel();
@@ -3576,6 +3582,44 @@ class _HomePageState extends State<HomePage> {
     setState(() => _sessao = MobileSyncService().sessaoAtual);
   }
 
+  /// Pacote 1: contador do ícone "Pendências de envio" (só o Hive).
+  void _observarPendenciasEnvio() {
+    _pendGeralSub?.cancel();
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    final repo = LancamentosRepository(uid: uid);
+    _pendGeralSub = repo.mudancas().asyncMap((_) async {
+      final todos = await repo.listarTodos();
+      return todos.where((l) => l.status != LancStatus.synced).length;
+    }).listen((n) {
+      if (mounted && n != _pendenciasEnvio) {
+        setState(() => _pendenciasEnvio = n);
+      }
+    });
+  }
+
+  Future<void> _abrirPendenciasEnvio() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) return;
+    await Navigator.of(context).push(MaterialPageRoute<void>(
+        builder: (_) => PendenciasSyncScreen(uid: uid)));
+  }
+
+  Widget _botaoPendenciasEnvio() {
+    final n = _pendenciasEnvio;
+    return IconButton(
+      tooltip: n == 0
+          ? 'Pendências de envio: nenhuma'
+          : 'Pendências de envio: $n',
+      onPressed: _abrirPendenciasEnvio,
+      icon: Badge(
+        isLabelVisible: n > 0,
+        label: Text(n > 99 ? '99+' : '$n'),
+        child: Icon(n > 0 ? Icons.cloud_upload : Icons.cloud_done_outlined),
+      ),
+    );
+  }
+
   Widget? _buildFabFluxo2() {
     final s = _sessao;
     final finalizando = MobileSyncService().finalizacaoEmAndamento;
@@ -3585,7 +3629,13 @@ class _HomePageState extends State<HomePage> {
     final bloqueadoErro = !aguardando && _comErro > 0;
     final habilitado = !finalizando && !aguardando && !bloqueadoErro;
     return FloatingActionButton.extended(
-      onPressed: habilitado ? _finalizarContagem : null,
+      // Pacote 1: com pendência, o botão abre o painel (antes ficava
+      // desabilitado, sem dizer quais registros nem permitir reenviar).
+      onPressed: habilitado
+          ? _finalizarContagem
+          : (aguardando || bloqueadoErro) && !finalizando
+              ? _abrirPendenciasEnvio
+              : null,
       icon: bloqueadoErro
           ? const Icon(Icons.error_outline)
           : finalizando || aguardando
@@ -3598,11 +3648,15 @@ class _HomePageState extends State<HomePage> {
       label: Text(finalizando
           ? 'Finalizando...'
           : aguardando
-              ? 'Sincronizando · faltam $_naoSincronizados'
+              ? 'Sincronizando · faltam $_naoSincronizados · ver'
               : bloqueadoErro
-                  ? '$_comErro lançamento(s) com erro: corrija'
+                  ? '$_comErro com erro · ver pendências'
                   : 'Finalizar minha contagem'),
-      backgroundColor: habilitado ? Colors.orange : Colors.grey,
+      backgroundColor: habilitado
+          ? Colors.orange
+          : bloqueadoErro
+              ? Colors.red.shade400
+              : Colors.grey,
     );
   }
 
@@ -4044,6 +4098,7 @@ class _HomePageState extends State<HomePage> {
     _participanteListener?.cancel();
     _sessaoSub?.cancel();
     _pendSub?.cancel();
+    _pendGeralSub?.cancel();
     _modoSub?.cancel();
     super.dispose();
   }
@@ -5193,6 +5248,7 @@ class _HomePageState extends State<HomePage> {
                 ),
             ],
           ),
+          _botaoPendenciasEnvio(),
           IconButton(
             tooltip: 'Limpeza Manual',
             icon: const Icon(Icons.cleaning_services),

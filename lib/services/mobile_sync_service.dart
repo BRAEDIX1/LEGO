@@ -618,13 +618,13 @@ class MobileSyncService {
         await Future<void>.delayed(const Duration(milliseconds: 100));
       }
 
-      // 2. Erros voltam para a fila e 3. sincroniza (com limite de espera:
-      //    offline o Firestore só completa ao reconectar)
+      // 2. Reenvio de tudo que não está sincronizado neste inventário e
+      //    rodada, inclusive os com erro (Pacote 1: reenvio manual do motor,
+      //    que registra o motivo de cada falha). Com limite de espera.
       final repo = LancamentosRepository(uid: uid);
-      await repo.reenfileirarErros(
-          inventarioId: inventarioId, contagemId: contagemId);
       try {
-        await SyncService.runOnce(uid).timeout(const Duration(seconds: 25));
+        await SyncService.reenviarEscopo(uid, inventarioId, contagemId)
+            .timeout(const Duration(seconds: 60));
       } on TimeoutException {
         debugPrint('⚠️ Sincronização antes de finalizar excedeu o tempo');
       }
@@ -636,7 +636,7 @@ class MobileSyncService {
       if (naoSincronizados > 0) {
         return ResultadoFinalizacao(false,
             '$naoSincronizados lançamento(s) ainda não chegaram ao servidor. '
-            'Verifique a conexão e tente novamente.');
+            'Veja quais e o motivo em "Pendências de envio".');
       }
 
       // 5. Finaliza no Firestore

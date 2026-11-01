@@ -41,6 +41,9 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  # Pacote 1 rev2: teste integrado com o Firestore do lego-teste.
+  integration_test:
+    sdk: flutter
   flutter_lints: ^6.0.0
 
   # Necessários para gerar os adapters Hive

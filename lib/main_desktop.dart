@@ -19,6 +19,8 @@ import 'firebase_options_teste.dart';
 // ⭐ Telas do Desktop (todas as fases)
 import 'package:lego/ui/desktop/screens/dashboard_desktop_screen.dart';
 import 'package:lego/services/compatibilidade_service.dart';
+import 'package:lego/services/registro_erros.dart';
+import 'package:open_filex/open_filex.dart';
 
 /// Ambiente deste executável, fixado pelo ponto de entrada.
 Ambiente _ambienteDesktop = Ambiente.producao;
@@ -27,9 +29,15 @@ bool get _ehTeste => _ambienteDesktop == Ambiente.teste;
 /// Produção. O teste entra por lib/main_desktop_teste.dart.
 Future<void> main() => iniciarLegoDesktop(Ambiente.producao);
 
-Future<void> iniciarLegoDesktop(Ambiente ambiente) async {
+/// Pacote 1 (P0-06): tudo roda numa zona protegida e com os tratadores
+/// globais de erro ligados (RegistroErros → arquivo de log local).
+Future<void> iniciarLegoDesktop(Ambiente ambiente) =>
+    RegistroErros.executarProtegido(() => _iniciarLegoDesktop(ambiente));
+
+Future<void> _iniciarLegoDesktop(Ambiente ambiente) async {
   WidgetsFlutterBinding.ensureInitialized();
   _ambienteDesktop = ambiente;
+  await RegistroErros.instalar(ambiente.name);
 
   final bloqueio = await _inicializarFirebaseDesktop();
   if (bloqueio != null) {
@@ -118,18 +126,40 @@ Widget _comFaixaDeTeste(Widget? child) {
     children: [
       Material(
         color: Colors.orange.shade700,
-        child: const SizedBox(
+        child: SizedBox(
           width: double.infinity,
-          child: Padding(
-            padding: EdgeInsets.symmetric(vertical: 4),
-            child: Text(
-              'LEGO TESTE · ambiente de teste (lego-teste) · não é produção',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                  color: Colors.white,
-                  fontWeight: FontWeight.bold,
-                  fontSize: 12),
-            ),
+          child: Row(
+            children: [
+              const Expanded(
+                child: Padding(
+                  padding: EdgeInsets.symmetric(vertical: 4),
+                  child: Text(
+                    'LEGO TESTE · ambiente de teste (lego-teste) · não é produção',
+                    textAlign: TextAlign.center,
+                    style: TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 12),
+                  ),
+                ),
+              ),
+              // Pacote 1 (P0-06): abre a pasta do log de erros. (Sem Tooltip:
+              // a faixa fica acima do Navigator, onde não há Overlay.)
+              InkWell(
+                onTap: () {
+                  final pasta = RegistroErros.pasta;
+                  if (pasta != null) OpenFilex.open(pasta);
+                },
+                child: const Padding(
+                  padding: EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                  child: Text('Log de erros',
+                      style: TextStyle(
+                          color: Colors.white,
+                          fontSize: 11,
+                          decoration: TextDecoration.underline)),
+                ),
+              ),
+            ],
           ),
         ),
       ),

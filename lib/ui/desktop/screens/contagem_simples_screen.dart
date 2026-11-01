@@ -11,7 +11,10 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 
+import 'package:lego/services/acompanhamento_sync_service.dart';
 import 'package:lego/services/analista_service.dart';
+import 'package:lego/services/sincronizacao/pendencias_sync.dart'
+    show ContagemPendencias, horaBr;
 import 'package:lego/services/comparativo.dart';
 import 'package:lego/services/comparativo_rodadas_service.dart';
 import 'package:lego/services/relatorio_inventario.dart';
@@ -42,6 +45,11 @@ class _ContagemSimplesScreenState extends State<ContagemSimplesScreen> {
   bool _exportando = false;
   String? _erro;
 
+  // Pacote 1: pendências de envio que os coletores INFORMARAM (Contagem
+  // Simples). Lançamentos só no Hive de um aparelho offline não aparecem.
+  StreamSubscription<Map<String, StatusSyncInformado>>? _escutaStatus;
+  Map<String, StatusSyncInformado> _statusSync = const {};
+
   @override
   void initState() {
     super.initState();
@@ -54,6 +62,7 @@ class _ContagemSimplesScreenState extends State<ContagemSimplesScreen> {
   @override
   void dispose() {
     _escuta?.cancel();
+    _escutaStatus?.cancel();
     super.dispose();
   }
 
@@ -61,7 +70,12 @@ class _ContagemSimplesScreenState extends State<ContagemSimplesScreen> {
     final a = await AnalistaService().souAnalista();
     if (!mounted) return;
     setState(() => _analista = a);
-    if (a) _escutar();
+    if (a) {
+      _escutar();
+      _escutaStatus = AcompanhamentoSyncService().streamStatus().listen((m) {
+        if (mounted) setState(() => _statusSync = m);
+      }, onError: (_) {});
+    }
   }
 
   /// Fim do período é inclusivo na tela; na consulta vira o dia seguinte.
@@ -195,6 +209,43 @@ class _ContagemSimplesScreenState extends State<ContagemSimplesScreen> {
     }
   }
 
+  /// Pacote 1: o que cada coletor informou sobre lançamentos da Contagem
+  /// Simples ainda não enviados (pendentes, com erro ou rejeitados).
+  Widget _faixaPendenciasAparelhos() {
+    final comPend = [
+      for (final st in _statusSync.values)
+        if (st.doEscopo('simples').total > 0) st,
+    ]..sort((a, b) => (a.nome ?? a.uid).compareTo(b.nome ?? b.uid));
+    if (comPend.isEmpty) return const SizedBox.shrink();
+    return Container(
+      width: double.infinity,
+      color: Colors.orange.withValues(alpha: 0.08),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Ainda não chegaram ao servidor (informado pelos aparelhos):',
+            style: TextStyle(fontWeight: FontWeight.bold, fontSize: 12),
+          ),
+          for (final st in comPend)
+            Text(
+              '${st.nome ?? st.uid}: ${_resumo(st.doEscopo('simples'))}'
+              '${st.baseServidor == null ? ' · sem hora confirmada' : ' · conferido ${horaBr(st.baseServidor!)}'}',
+              style: const TextStyle(fontSize: 12),
+            ),
+        ],
+      ),
+    );
+  }
+
+  String _resumo(ContagemPendencias c) => [
+        if (c.pendentes > 0) '${c.pendentes} pendente(s)',
+        if (c.aguardandoReenvio > 0) '${c.aguardandoReenvio} aguardando reenvio',
+        if (c.erroManual > 0) '${c.erroManual} com erro',
+        if (c.rejeitados > 0) '${c.rejeitados} rejeitado(s)',
+      ].join(', ');
+
   @override
   Widget build(BuildContext context) {
     if (_analista == null) {
@@ -260,6 +311,7 @@ class _ContagemSimplesScreenState extends State<ContagemSimplesScreen> {
           ),
         ),
         const Divider(height: 1),
+        _faixaPendenciasAparelhos(),
         if (_erro != null)
           Padding(
             padding: const EdgeInsets.all(16),

@@ -20,7 +20,8 @@ class ConnectivityService {
         return;
       }
 
-      await SyncService.runOnce(uid);
+      // Pacote 1: a conexão voltou — tenta já os que esperavam por rede.
+      await SyncService.runOnce(uid, ignorarEspera: true);
       SyncService.schedule(uid);
     });
   }

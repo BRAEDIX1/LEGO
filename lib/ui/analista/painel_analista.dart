@@ -26,6 +26,11 @@ import 'package:lego/services/comparativo_rodadas_service.dart';
 import 'package:lego/services/inventario_service.dart';
 import 'package:lego/services/monitor_service.dart';
 import 'package:lego/services/relatorio_inventario_service.dart';
+import 'package:lego/services/acompanhamento_sync_service.dart';
+import 'package:lego/services/relatorio_inventario.dart' show AbaRelatorio;
+import 'package:lego/services/relatorio_inventario_xlsx.dart' show gerarXlsx;
+import 'package:lego/services/sincronizacao/pendencias_sync.dart'
+    show ContagemPendencias, dataBr, horaBr;
 
 // ---------------------------------------------------------------------------
 // Ações compartilhadas (celular e desktop)
@@ -160,6 +165,14 @@ class _PainelAnalistaState extends State<PainelAnalista> {
   Map<String, Map<String, int>> _sinc = const {}; // rodada → uid → qtd
   final List<StreamSubscription<Map<String, int>>> _escutaSinc = [];
 
+  // Pacote 1: o que os coletores informaram (pendências de envio) e os
+  // recusados que chegaram à Recuperação (fora do resultado).
+  final _acomp = AcompanhamentoSyncService();
+  Map<String, StatusSyncInformado> _statusSync = const {};
+  List<LancamentoRecuperacao> _recuperacao = const [];
+  StreamSubscription<Map<String, StatusSyncInformado>>? _escutaStatus;
+  StreamSubscription<List<LancamentoRecuperacao>>? _escutaRecup;
+
   @override
   void initState() {
     super.initState();
@@ -172,6 +185,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
     if (old.inventarioId != widget.inventarioId) {
       _naturezaC3 = null;
       _sinc = const {};
+      _recuperacao = const [];
       _assinar();
     }
   }
@@ -181,6 +195,22 @@ class _PainelAnalistaState extends State<PainelAnalista> {
     _streamParts = _monitor.streamParticipantes(widget.inventarioId);
     _streamLinhas = _c3.streamLinhas(widget.inventarioId);
     _escutarSincronizados();
+    _escutarAcompanhamento();
+  }
+
+  /// Pacote 1: informes dos coletores e Recuperação deste inventário.
+  void _escutarAcompanhamento() {
+    _escutaStatus?.cancel();
+    _escutaRecup?.cancel();
+    final id = widget.inventarioId;
+    _escutaStatus = _acomp.streamStatus().listen((m) {
+      if (mounted) setState(() => _statusSync = m);
+    }, onError: (_) {});
+    _escutaRecup = _acomp.streamRecuperacao(id).listen((l) {
+      if (mounted && id == widget.inventarioId) {
+        setState(() => _recuperacao = l);
+      }
+    }, onError: (_) {});
   }
 
   /// Lançamentos no servidor por pessoa, em tempo real (C1 e C2).
@@ -205,6 +235,8 @@ class _PainelAnalistaState extends State<PainelAnalista> {
     for (final e in _escutaSinc) {
       e.cancel();
     }
+    _escutaStatus?.cancel();
+    _escutaRecup?.cancel();
     super.dispose();
   }
 
@@ -254,21 +286,77 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         _snack('$rot encerrada.');
       } on PendentesLocaisException catch (e) {
         // A2: segundo nível explícito.
-        final forcar = await _confirmar(
-          'Lançamentos não sincronizados',
-          'Existem lançamentos ainda nos aparelhos:\n'
-              '${e.quem.join('\n')}\n\n'
-              'O comparativo pode nascer incompleto. Peça para essas pessoas '
-              'ficarem online.\n\nEncerrar mesmo assim?',
-          'Encerrar mesmo assim',
-          perigo: true,
-        );
-        if (forcar) {
-          await _monitor.encerrarRodada(inv.id, rodada, forcar: true);
-          _snack('$rot encerrada (forçado).');
+        // Pacote 1: encerramento forçado é exceção — exige motivo, fica na
+        // auditoria e não apaga nada dos aparelhos.
+        final motivo = await _pedirMotivoForcado(rot, e.quem);
+        if (motivo != null) {
+          await _monitor.encerrarRodada(inv.id, rodada,
+              forcar: true, motivo: motivo);
+          _snack('$rot encerrada (forçado, registrado na auditoria).');
         }
       }
     });
+  }
+
+  /// Pacote 1: confirmação do encerramento forçado, com motivo obrigatório.
+  Future<String?> _pedirMotivoForcado(String rot, List<String> quem) async {
+    final ctrl = TextEditingController();
+    final r = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setD) => AlertDialog(
+          title: Text('Encerrar a $rot com pendências?'),
+          content: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text('Pendências conhecidas, ou aparelhos sem informe '
+                    'recente (pendências desconhecidas):'),
+                const SizedBox(height: 4),
+                for (final q in quem)
+                  Text('• $q',
+                      style: const TextStyle(fontWeight: FontWeight.bold)),
+                const SizedBox(height: 8),
+                const Text(
+                  'Procedimento EXCEPCIONAL. O comparativo nascerá sem esses '
+                  'lançamentos. Nada é apagado dos aparelhos: o que chegar '
+                  'depois será recusado pelo servidor (rodada encerrada) e '
+                  'irá para a Recuperação, fora do resultado. O encerramento '
+                  'fica na auditoria com o motivo e as pendências informadas.',
+                ),
+                const SizedBox(height: 12),
+                TextField(
+                  controller: ctrl,
+                  autofocus: true,
+                  maxLines: 3,
+                  onChanged: (_) => setD(() {}),
+                  decoration: const InputDecoration(
+                    labelText: 'Motivo (obrigatório, mínimo 10 caracteres)',
+                    border: OutlineInputBorder(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(ctx),
+                child: const Text('Voltar')),
+            FilledButton(
+              style: FilledButton.styleFrom(backgroundColor: Colors.red),
+              onPressed: ctrl.text.trim().length < 10
+                  ? null
+                  : () => Navigator.pop(ctx, ctrl.text.trim()),
+              child: const Text('Encerrar mesmo assim'),
+            ),
+          ],
+        ),
+      ),
+    );
+    // Sem dispose imediato: o campo ainda existe durante a animação de
+    // saída do diálogo.
+    return r;
   }
 
   Future<void> _gerar(Inventario inv, {bool refazer = false}) async {
@@ -396,6 +484,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
                       _cardComparativo(inv, linhas),
                       _cardC3(inv, linhas),
                       _cardFinal(inv),
+                      if (_recuperacao.isNotEmpty) _cardRecuperacao(inv),
                     ],
                   );
                 },
@@ -539,8 +628,10 @@ class _PainelAnalistaState extends State<PainelAnalista> {
           finalizou: p.finalizou,
           nome: p.nome,
           detalhe: '${p.sincronizados} lançamento(s) no servidor'
-              '${p.pendentesLocais > 0 ? ' · ${p.pendentesLocais} ainda no aparelho' : ''}',
-          corDetalhe: p.pendentesLocais > 0 ? Colors.orange.shade800 : null,
+              '${p.pendentesLocais > 0 ? ' · ${p.pendentesLocais} ainda no aparelho' : ''}'
+              '${_textoAparelho(p.uid, escopoInventario(inv.id, rodada))}',
+          corDetalhe: _corAparelho(p.uid, escopoInventario(inv.id, rodada)) ??
+              (p.pendentesLocais > 0 ? Colors.orange.shade800 : null),
         ),
       if (!encerrada) ...[
         const SizedBox(height: 4),
@@ -550,6 +641,139 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         ),
       ],
     ]);
+  }
+
+  /// Pacote 1: o que o coletor informou para este inventário + rodada.
+  String _textoAparelho(String uid, String escopo) {
+    final st = _statusSync[uid];
+    if (st == null) return '';
+    final c = st.doEscopo(escopo);
+    // rev3: hora em que o aparelho conferiu (base no relógio do servidor).
+    final quando = st.baseServidor;
+    final antigo = quando != null &&
+        DateTime.now().difference(quando) > const Duration(minutes: 15);
+    final hora = quando == null
+        ? ' (informe sem hora confirmada)'
+        : ' (conferido ${horaBr(quando)}${antigo ? ' — informe antigo' : ''})';
+    // Zero só é "tudo enviado" se o aparelho confirmou ESTE escopo.
+    if (c.total == 0) {
+      return st.confirmouEscopo(escopo)
+          ? ' · aparelho: tudo enviado$hora'
+          : ' · aparelho: rodada não confirmada$hora';
+    }
+    return ' · aparelho: ${_resumoContagem(c)}$hora';
+  }
+
+  Color? _corAparelho(String uid, String escopo) {
+    final c = _statusSync[uid]?.doEscopo(escopo);
+    if (c == null || c.total == 0) return null;
+    if (c.rejeitados > 0 || c.erroManual > 0) return Colors.red.shade700;
+    return Colors.orange.shade800;
+  }
+
+  String _resumoContagem(ContagemPendencias c) => [
+        if (c.pendentes > 0) '${c.pendentes} pendente(s)',
+        if (c.aguardandoReenvio > 0) '${c.aguardandoReenvio} aguardando reenvio',
+        if (c.erroManual > 0) '${c.erroManual} com erro',
+        if (c.rejeitados > 0) '${c.rejeitados} rejeitado(s)',
+      ].join(', ');
+
+  String _n(Object? v) {
+    if (v is! num) return '';
+    final d = v.toDouble();
+    return (d == d.roundToDouble() ? d.toInt().toString() : d.toString())
+        .replaceAll('.', ',');
+  }
+
+  /// Pacote 1: lançamentos que os aparelhos não conseguiram gravar porque a
+  /// rodada já estava encerrada (ou outra recusa definitiva). NÃO entram no
+  /// resultado; ficam aqui para o analista decidir.
+  Widget _cardRecuperacao(Inventario inv) {
+    final porRodada = <String, int>{};
+    for (final r in _recuperacao) {
+      final k = Rodadas.rotulo(r.contagemId ?? '');
+      porRodada[k] = (porRodada[k] ?? 0) + 1;
+    }
+    return _card(
+      'Recuperação',
+      '${_recuperacao.length} fora do resultado',
+      Colors.purple,
+      [
+        const Text(
+          'Lançamentos recusados pelo servidor depois do encerramento (ou por '
+          'outra regra), enviados pelos aparelhos. Não alteram o inventário.',
+          style: TextStyle(fontSize: 12),
+        ),
+        Text(porRodada.entries.map((e) => '${e.key}: ${e.value}').join(' · ')),
+        const SizedBox(height: 4),
+        for (final r in _recuperacao.take(20))
+          Text(
+            '${r.dados['operacao'] == 'exclusao' ? 'EXCLUSÃO · ' : ''}'
+            '${r.operador} · ${Rodadas.rotulo(r.contagemId ?? '')} · '
+            '${r.dados['codigo'] ?? r.dados['doc_oficial'] ?? ''} '
+            '${r.dados['lote'] ?? ''} · '
+            '${r.dados['localizacaoNome'] ?? r.dados['localizacaoId'] ?? ''} · '
+            'cheio ${_n(r.dados['cheio'])} vazio ${_n(r.dados['vazio'])} '
+            'qtd ${_n(r.dados['quantidade'])} · '
+            '${r.criadoEm == null ? '' : '${dataBr(r.criadoEm!)} ${horaBr(r.criadoEm!)}'}'
+            '${r.motivo.isEmpty ? '' : ' · ${r.motivo}'}',
+            style: const TextStyle(fontSize: 12),
+          ),
+        if (_recuperacao.length > 20)
+          Text('… e mais ${_recuperacao.length - 20} (exporte para ver todos).',
+              style: const TextStyle(fontSize: 12, color: Colors.grey)),
+        if (_ehDesktop) ...[
+          const SizedBox(height: 6),
+          OutlinedButton.icon(
+            onPressed: () => _exportarRecuperacao(inv),
+            icon: const Icon(Icons.file_download, size: 18),
+            label: const Text('Exportar Recuperação (.xlsx)'),
+          ),
+        ],
+      ],
+    );
+  }
+
+  Future<void> _exportarRecuperacao(Inventario inv) async {
+    await _rodar(() async {
+      final aba = AbaRelatorio('Recuperação', [
+        [
+          'Operação', 'Operador', 'Rodada', 'Código', 'Descrição', 'Lote',
+          'TAG', 'Área',
+          'Quantidade', 'Cheio', 'Vazio', 'Lançado no aparelho', 'Recebido',
+          'Motivo', 'Id local', 'Situação',
+        ],
+        for (final r in _recuperacao)
+          [
+            r.dados['operacao'] ?? 'inclusao',
+            r.operador,
+            Rodadas.rotulo(r.contagemId ?? ''),
+            r.dados['codigo'],
+            r.dados['descricao'],
+            r.dados['lote'],
+            r.dados['tag'],
+            r.dados['localizacaoNome'] ?? r.dados['localizacaoId'],
+            r.dados['quantidade'],
+            r.dados['cheio'],
+            r.dados['vazio'],
+            r.criadoEm == null
+                ? null
+                : '${dataBr(r.criadoEm!)} ${horaBr(r.criadoEm!)}',
+            r.recebidoEm == null
+                ? null
+                : '${dataBr(r.recebidoEm!)} ${horaBr(r.recebidoEm!)}',
+            r.motivo,
+            r.dados['idLocal'],
+            r.dados['situacao'],
+          ],
+      ]);
+      final bytes = gerarXlsx([aba]);
+      if (bytes == null) throw Exception('não foi possível gerar o .xlsx');
+      final caminho = await salvarXlsxComo(
+          'LEGO_Inventario_${inv.numeroFormatado}_Recuperacao.xlsx', bytes,
+          titulo: 'Salvar Recuperação');
+      if (caminho != null) _snack('Planilha salva: $caminho');
+    });
   }
 
   Widget _cardComparativo(Inventario inv, List<LinhaComparativo> linhas) {

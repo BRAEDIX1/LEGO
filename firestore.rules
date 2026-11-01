@@ -320,5 +320,45 @@ service cloud.firestore {
       }
       // ===== FIM ENTREGA 3 =====
     }
+
+    // ===== Pacote 1 (fila offline, 01/11/2026) — publicar SÓ no lego-teste =====
+    // Informe do coletor sobre as próprias pendências de envio (o Desktop lê).
+    match /sync_status/{uid} {
+      allow read: if analista()
+                  || (request.auth != null && request.auth.uid == uid);
+      allow create, update: if request.auth != null
+                            && request.auth.uid == uid
+                            && request.resource.data.get('uid', '') == uid;
+      allow delete: if false;
+    }
+    // Cópia dos lançamentos recusados em definitivo (ex.: rodada encerrada).
+    // NÃO entra no resultado do inventário. O operador só cria a própria
+    // cópia (id = <uid>_<idLocal>) e pode conferir se ela já existe; não
+    // altera nem apaga. O analista lê e registra a análise.
+    match /lancamentos_recuperacao/{docId} {
+      allow read: if analista()
+                  || (request.auth != null
+                      && docId.matches(request.auth.uid + '_.+'));
+      allow create: if request.auth != null
+                    && request.resource.data.get('uid', '') == request.auth.uid
+                    && docId == request.auth.uid + '_'
+                         + request.resource.data.get('idLocal', '');
+      allow update: if analista()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['analise_status', 'analise_por',
+                                   'analise_em', 'analise_obs']);
+      allow delete: if false;
+    }
+    // rev3: "pulso" para obter a hora do SERVIDOR (o aparelho antes de
+    // informar; o Desktop antes de avaliar pendências). Cada um só o seu.
+    match /relogio_servidor/{uid} {
+      allow read: if request.auth != null && request.auth.uid == uid;
+      allow create, update: if request.auth != null
+                            && request.auth.uid == uid
+                            && request.resource.data.keys().hasOnly(['em'])
+                            && request.resource.data.em == request.time;
+      allow delete: if false;
+    }
+    // ===== FIM Pacote 1 =====
   }
 }

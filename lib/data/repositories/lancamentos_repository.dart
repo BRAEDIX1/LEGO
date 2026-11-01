@@ -10,6 +10,8 @@ import 'package:lego/data/local/lanc_local.dart';
 import 'package:lego/config/fluxo2_config.dart';
 import 'package:lego/models/sessao_contagem.dart' show SessaoContagem, kDeletePending;
 import 'package:path_provider/path_provider.dart';
+import 'package:lego/services/sincronizacao/observador_pendencias.dart'
+    show avisarMudancaExclusoesLegadas;
 // lib/data/repositories/lancamentos_repository.dart
 import 'dart:async';
 
@@ -198,6 +200,34 @@ class LancamentosRepository {
   Future<List<LancLocal>> getPending() async {
     final box = await _openBox();
     return box.values.where((e) => e.status == LancStatus.pending).toList();
+  }
+
+  /// Pacote 1: todos os lançamentos deste usuário no aparelho.
+  Future<List<LancLocal>> listarTodos() async {
+    final box = await _openBox();
+    return box.values.toList();
+  }
+
+  /// Pacote 1: um lançamento pelo id local (null se não existe mais).
+  Future<LancLocal?> obter(String idLocal) async {
+    final box = await _openBox();
+    return box.get(idLocal);
+  }
+
+  /// Pacote 1: troca só o status (o `errorCode`, inclusive a marca de
+  /// exclusão pendente, fica como está).
+  Future<void> definirStatus(String idLocal, LancStatus status) async {
+    final box = await _openBox();
+    final v = box.get(idLocal);
+    if (v == null) return;
+    await box.put(idLocal, v.copyWith(status: status));
+  }
+
+  /// Pacote 1: escuta da caixa (painel de pendências e contador da tela).
+  Stream<void> mudancas() async* {
+    final box = await _openBox();
+    yield null;
+    yield* box.watch().map((_) {});
   }
 
   Future<int> countPending() async {
@@ -425,6 +455,7 @@ class LancamentosRepository {
         if (!pendentes.contains(docId)) {
           pendentes.add(docId);
           await prefs.setStringList('delete_pending', pendentes);
+          avisarMudancaExclusoesLegadas(); // Pacote 1 rev2: painel atualiza
         }
       } catch (_) {
         // Se nem o registro da pendência funcionar, o item já saiu do Hive;

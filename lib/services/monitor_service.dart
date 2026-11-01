@@ -5,10 +5,14 @@
 // as mesmas operações.
 
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 
 import 'package:lego/models/inventario.dart';
 import 'package:lego/models/participante.dart';
+import 'package:lego/services/acompanhamento_sync_service.dart';
 import 'package:lego/services/comparativo_rodadas_service.dart';
+import 'package:lego/services/sincronizacao/status_sync_aparelho.dart'
+    show FirestoreCanalStatusSync;
 
 /// Situação de um participante numa rodada (C1 ou C2), para o monitor.
 class ParticipanteRodada {
@@ -36,7 +40,10 @@ class ParticipanteRodada {
 /// incompleto. Recusado, a não ser com confirmação explícita (forcar).
 class PendentesLocaisException implements Exception {
   final List<String> quem;
-  PendentesLocaisException(this.quem);
+  /// rev1: detalhe por participante (pendência conhecida, sem informe ou
+  /// informe antigo), com a idade de cada informação.
+  final List<PendenciaEncerramento> detalhes;
+  PendentesLocaisException(this.quem, {this.detalhes = const []});
   @override
   String toString() =>
       'Há lançamentos ainda não sincronizados: ${quem.join(', ')}';
@@ -120,9 +127,25 @@ class MonitorService {
     return out;
   }
 
+  /// rev3: hora do servidor agora (ida e volta em `relogio_servidor/{uid}`).
+  Future<DateTime> _horaServidor() async {
+    final uid = FirebaseAuth.instance.currentUser?.uid;
+    if (uid == null) throw StateError('Analista não autenticado');
+    try {
+      return await FirestoreCanalStatusSync(_fs).horaServidor(uid);
+    } catch (e) {
+      throw StateError('Sem confirmação da hora do servidor para conferir as '
+          'pendências dos aparelhos: $e');
+    }
+  }
+
   /// Encerramento global de C1/C2 com a checagem A2.
+  /// Pacote 1: encerramento FORÇADO (com pendências nos aparelhos) exige
+  /// [motivo] e fica na auditoria com quem tinha pendência e quantas. Nada é
+  /// apagado dos aparelhos: o que não chegou será recusado pelas regras e
+  /// irá para a Recuperação (fora do resultado).
   Future<void> encerrarRodada(String inventarioId, String rodada,
-      {bool forcar = false}) async {
+      {bool forcar = false, String? motivo, DateTime? agora}) async {
     final parts = (await _fs
             .collection('inventarios')
             .doc(inventarioId)
@@ -132,18 +155,58 @@ class MonitorService {
         .map((d) => {...d.data(), 'uid': d.id})
         .toList();
     final daRodada = participantesDaRodada(parts, rodada, const {});
-    final comPendentes = daRodada.where((p) => p.pendentesLocais > 0).toList();
     final emAndamento = daRodada.where((p) => !p.finalizou).length;
-    if (comPendentes.isNotEmpty && !forcar) {
-      throw PendentesLocaisException(comPendentes
-          .map((p) => '${p.nome} (${p.pendentesLocais})')
-          .toList());
+
+    // rev1: também o que cada APARELHO informou (sync_status), com a idade
+    // do informe. Pendência conhecida nunca é ignorada; informe ausente ou
+    // antigo de quem está em andamento não vale como "sem pendência".
+    final statusSnap = await _fs
+        .collection('sync_status')
+        .get(const GetOptions(source: Source.server));
+    final status = {
+      for (final d in statusSnap.docs)
+        d.id: StatusSyncInformado.deMapa(d.id, d.data()),
+    };
+    final pendencias = avaliarPendenciasEncerramento(
+      inventarioId: inventarioId,
+      rodada: rodada,
+      participantes: [
+        for (final p in daRodada)
+          (
+            uid: p.uid,
+            nome: p.nome,
+            finalizou: p.finalizou,
+            pendentesLocais: p.pendentesLocais,
+            pendentesInformadosEm: p.pendentesInformadosEm,
+          ),
+      ],
+      status: status,
+      // rev3: idade medida no relógio do SERVIDOR (pulso do Desktop), não no
+      // relógio deste computador.
+      agora: agora ?? await _horaServidor(),
+    );
+    if (pendencias.isNotEmpty && !forcar) {
+      throw PendentesLocaisException(
+          pendencias.map((p) => p.texto).toList(),
+          detalhes: pendencias);
     }
+    final forcado = forcar && pendencias.isNotEmpty;
+    if (forcado && (motivo == null || motivo.trim().length < 10)) {
+      throw ArgumentError('Encerramento forçado exige o motivo.');
+    }
+    final conhecidas = pendencias
+        .where((p) =>
+            p.motivo == MotivoPendenciaEncerramento.pendenciaInformada)
+        .length;
     await _comparativo.encerrarRodada(inventarioId, rodada,
         dadosParticipantes: {
           'em_andamento': emAndamento,
-          'com_pendentes': comPendentes.length,
-          'forcado': forcar && comPendentes.isNotEmpty,
+          'com_pendentes': conhecidas,
+          'pendencias_desconhecidas': pendencias.length - conhecidas,
+          'forcado': forcado,
+          if (forcado) 'motivo': motivo!.trim(),
+          if (forcado)
+            'pendencias': [for (final p in pendencias) p.toMap()],
         });
   }
 }
