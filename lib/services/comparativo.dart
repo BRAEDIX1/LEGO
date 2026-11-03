@@ -303,11 +303,15 @@ class LinhaComparativo {
   String get localFinal => localNome ?? localId ?? '';
 
   /// Chave do resultado consolidado (relatório): Gás = produto + lote
-  /// (somando todos os locais); Material = código + prateleira; Cilindro =
-  /// produto/família. A C3 é sempre somada dentro desta chave.
+  /// (somando todos os locais); Material = código (somando todas as
+  /// prateleiras — 03/11, Djalma: o Final mostra o total do produto e as
+  /// prateleiras onde ele está); Cilindro = produto/família. A C3 é sempre
+  /// somada dentro desta chave. A linha do COMPARATIVO continua sendo
+  /// código + prateleira (C1 × C2 e C3 por prateleira); o detalhe por
+  /// prateleira fica em "Final por Local".
   String get chaveConsolidacao => switch (natureza) {
         Natureza.gas => '$codigo|${lote ?? ''}',
-        Natureza.material => '$codigo|$prateleira',
+        Natureza.material => codigo,
         Natureza.cilindro => identificacao,
       };
 
@@ -812,7 +816,8 @@ TotaisRodada? somarTotais(Iterable<TotaisRodada?> ts) {
 class ConsolidadoProduto {
   final Natureza natureza;
   final String identificacao;
-  /// Gás: lote do consolidado. Material: prateleira (em [prateleira]).
+  /// Gás: lote do consolidado. Material: prateleiras do produto, separadas
+  /// por vírgula (em [prateleira]).
   final String? lote;
   /// Gás: volume de um cilindro do produto (para o volume final recalculável
   /// no .xlsx). Null se não der para determinar com segurança.
@@ -911,7 +916,16 @@ List<ConsolidadoProduto> consolidarPorProduto(
       identificacao: ls.first.identificacao,
       lote: natureza == Natureza.gas ? ls.first.lote : null,
       volumeUnitario: natureza == Natureza.gas ? _volumeUnitario(ls) : null,
-      prateleira: natureza == Natureza.material ? ls.first.prateleira : '',
+      // Material: todas as prateleiras do produto, em ordem ("3E3, 5G3").
+      prateleira: natureza == Natureza.material
+          ? (ls
+                  .map((l) => l.prateleira.trim())
+                  .where((p) => p.isNotEmpty)
+                  .toSet()
+                  .toList()
+                ..sort())
+              .join(', ')
+          : '',
       descricao: desc,
       c1: somarTotais(ls.map((l) => l.c1)),
       c2: somarTotais(ls.map((l) => l.c2)),

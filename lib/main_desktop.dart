@@ -10,6 +10,7 @@
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:intl/date_symbol_data_local.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:lego/config/ambiente.dart';
@@ -38,6 +39,14 @@ Future<void> _iniciarLegoDesktop(Ambiente ambiente) async {
   WidgetsFlutterBinding.ensureInitialized();
   _ambienteDesktop = ambiente;
   await RegistroErros.instalar(ambiente.name);
+  // 03/11 (log do Desktop): o Histórico usa datas em português
+  // (DateFormat('MMMM yyyy', 'pt_BR')) e quebrava com LocaleDataException
+  // porque os dados de idioma nunca eram carregados no Desktop.
+  try {
+    await initializeDateFormatting('pt_BR');
+  } catch (e, st) {
+    RegistroErros.registrar('inicio', e, st, contexto: 'datas pt_BR');
+  }
 
   final bloqueio = await _inicializarFirebaseDesktop();
   if (bloqueio != null) {

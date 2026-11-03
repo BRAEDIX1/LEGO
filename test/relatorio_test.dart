@@ -110,6 +110,60 @@ void main() {
     });
   });
 
+  // 03/11 (Djalma, inventário 008): no Final de Materiais, o mesmo código em
+  // prateleiras diferentes é UMA linha com o total e as prateleiras.
+  group('Materiais: mesmo código em duas prateleiras', () {
+    final c1 = [
+      bruto('M3', qtd: 6, prat: '3E3'),
+      bruto('M3', qtd: 2, prat: '5G3'),
+    ];
+    final c2 = [
+      bruto('M3', qtd: 4, prat: '3E3'),
+      bruto('M3', qtd: 2, prat: '5G3'),
+    ];
+    final r1 = [for (final m in c1) resumo(m, origemMateriais)];
+    final r2 = [for (final m in c2) resumo(m, origemMateriais)];
+    final cmp = marcarForaDaC3(compararC1C2(r1, r2), Natureza.material);
+    // 3E3 divergiu (6 × 4) e foi recontada: 5. 5G3 fechou (2 = 2).
+    final comC3 = [
+      for (final l in cmp)
+        l.emAnalise
+            ? LinhaComparativo.deMapa({
+                ...l.toMap(),
+                'c3': resultadoC3('material', quantidade: 5).toMap(),
+              })
+            : l
+    ];
+    final abas = montarRelatorio(
+      numero: '008',
+      tipo: Natureza.material,
+      geradoEm: DateTime(2026, 11, 3),
+      lancsC1: c1,
+      lancsC2: c2,
+      resumoC1: r1,
+      resumoC2: r2,
+      comparativo: comC3,
+    );
+
+    test('Final: uma linha, 5 + 2 = 7, com as duas prateleiras', () {
+      final a = abas.firstWhere((x) => x.nome == 'Final');
+      expect(a.dados, [
+        ['M3', 'DESC M3', 7, '3E3, 5G3', 1, 1, 'C1 = C2 + C3'],
+      ]);
+    });
+    test('C3 Consolidado: o mesmo total do produto', () {
+      final a = abas.firstWhere((x) => x.nome == 'C3 Consolidado');
+      expect(a.dados.length, 1);
+      expect(a.dados.single[0], 'M3');
+      expect(a.dados.single[2], '3E3, 5G3');
+      expect(a.dados.single[5], 7); // C3 consolidada
+    });
+    test('Final por Local: o detalhe continua por prateleira', () {
+      final a = abas.firstWhere((x) => x.nome == 'Final por Local');
+      expect(a.dados.length, 2);
+    });
+  });
+
   group('Gases (gera Gases e Cilindros)', () {
     final c1 = [bruto('G1', cheio: 8, vazio: 5, lote: 'L1', volume: 10)];
     final c2 = [bruto('G1', cheio: 7, vazio: 6, lote: 'L1', volume: 10)];

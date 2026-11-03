@@ -11,6 +11,8 @@
 //   Idempotente: comparativo concluído não roda de novo, a não ser com
 //   `refazer: true` (só antes de a C3 começar).
 
+import 'dart:io' show Platform;
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
@@ -169,6 +171,14 @@ class ComparativoRodadasService {
   /// lançamento não tem. Sem cadastro no aparelho, fica a regra de reserva
   /// de [LancResumo.ehGas].
   Future<List<LancResumo>> _classificar(List<LancResumo> lancs) async {
+    // 03/11 (log do Desktop): o Desktop não abre o Hive, então não tem o
+    // cadastro local. Cada consulta falhava ("You need to initialize Hive")
+    // e o Hive ainda deixava um erro solto no log, um por produto, a cada
+    // carga do relatório. No computador, usa direto a regra de reserva
+    // (origem gravada no lançamento ou [LancResumo.ehGas]).
+    if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
+      return lancs;
+    }
     final repo = ProdutosRepository();
     final cache = <String, (String?, String?, double?)>{};
     final out = <LancResumo>[];

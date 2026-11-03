@@ -453,62 +453,50 @@ class InventarioService {
 
     final invRef = _inventarios.doc(inventarioId);
 
-    // Item 7: as recusas previsíveis, conferidas ANTES da transação (no
-    // Windows, uma transação que falha pode derrubar o app).
-    {
-      final s = await invRef.get(const GetOptions(source: Source.server));
-      if (!s.exists) {
-        throw OperacaoNaoPermitidaException(
-            'Encerrar inventário', inventarioId, 'inventário não encontrado');
-      }
-      final inv = Inventario.fromFirestore(s);
-      if (!inv.isFluxoMaquinaEstados) {
-        throw OperacaoNaoPermitidaException('Encerrar inventário', inventarioId,
-            'inventário do fluxo legado; use finalizarInventario');
-      }
-      final pendencias = inv.pendenciasParaEncerrar();
-      if (pendencias.isNotEmpty) throw EncerramentoBloqueadoException(pendencias);
+    // Item 7 (03/11): no Desktop de uso (Windows, Release), "Encerrar
+    // inventário" fechava o app sem encerrar (inventário 008). A biblioteca
+    // nativa do Firestore no Windows derruba o app quando esta transação
+    // falha. Troca: leituras do SERVIDOR + validação + gravação em LOTE
+    // (WriteBatch: as três gravações entram juntas ou nenhuma entra; um erro
+    // volta como mensagem). O que se perde é só a releitura atômica dentro
+    // da transação — o pior caso, dois analistas encerrando no mesmo
+    // segundo, gera um evento de auditoria repetido, sem alterar dados.
+    final invSnap = await invRef.get(const GetOptions(source: Source.server));
+    if (!invSnap.exists) {
+      throw OperacaoNaoPermitidaException(
+          'Encerrar inventário', inventarioId, 'inventário não encontrado');
     }
+    final inv = Inventario.fromFirestore(invSnap);
+    if (!inv.isFluxoMaquinaEstados) {
+      throw OperacaoNaoPermitidaException('Encerrar inventário', inventarioId,
+          'inventário do fluxo legado; use finalizarInventario');
+    }
+    final pendencias = inv.pendenciasParaEncerrar();
+    if (pendencias.isNotEmpty) throw EncerramentoBloqueadoException(pendencias);
 
-    await _firestore.runTransaction<void>((tx) async {
-      // ---------- LEITURAS ----------
-      final invSnap = await tx.get(invRef);
-      if (!invSnap.exists) {
-        throw OperacaoNaoPermitidaException(
-            'Encerrar inventário', inventarioId, 'inventário não encontrado');
-      }
-      final inv = Inventario.fromFirestore(invSnap);
-      if (!inv.isFluxoMaquinaEstados) {
-        throw OperacaoNaoPermitidaException('Encerrar inventário', inventarioId,
-            'inventário do fluxo legado; use finalizarInventario');
-      }
-      final pendencias = inv.pendenciasParaEncerrar();
-      if (pendencias.isNotEmpty) throw EncerramentoBloqueadoException(pendencias);
+    final contadores =
+        await _contadoresRef.get(const GetOptions(source: Source.server));
 
-      final contadores = await tx.get(_contadoresRef);
-
-      // ---------- ESCRITAS ----------
-      tx.update(invRef, {
-        'status': StatusInventario.finalizado.name,
-        'data_fim': FieldValue.serverTimestamp(),
-        'encerrado_por': user.uid,
-      });
-
-      if (contadores.data()?[_campoTravaCompleto] == inventarioId) {
-        tx.set(_contadoresRef, {
-          _campoTravaCompleto: null,
-          'atualizado_em': FieldValue.serverTimestamp(),
-        }, SetOptions(merge: true));
-      }
-
-      AuditEventService.registrarNaTransacao(
-        tx,
-        inventarioId: inventarioId,
-        tipo: TipoEvento.inventarioEncerrado,
-        uid: user.uid,
-        dados: {'numero': inv.numero},
-      );
+    final lote = _firestore.batch();
+    lote.update(invRef, {
+      'status': StatusInventario.finalizado.name,
+      'data_fim': FieldValue.serverTimestamp(),
+      'encerrado_por': user.uid,
     });
+    if (contadores.data()?[_campoTravaCompleto] == inventarioId) {
+      lote.set(_contadoresRef, {
+        _campoTravaCompleto: null,
+        'atualizado_em': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    }
+    AuditEventService.registrarNoBatch(
+      lote,
+      inventarioId: inventarioId,
+      tipo: TipoEvento.inventarioEncerrado,
+      uid: user.uid,
+      dados: {'numero': inv.numero},
+    );
+    await lote.commit();
 
     debugPrint('✅ Inventário Completo $inventarioId encerrado; trava liberada');
   }

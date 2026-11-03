@@ -209,7 +209,7 @@ const nomeAbaC3Recontagem = 'C3 Recontagem';
 List<String> cabecalhoC3Consolidado(Natureza n) => [
       'Código', 'Descrição',
       if (n == Natureza.gas) 'Lote',
-      if (n == Natureza.material) 'Prateleira',
+      if (n == Natureza.material) 'Prateleiras',
       'C1', 'C2', 'C3 consolidada', 'Final',
       'Situação da C3', 'Linhas por consenso (C1 = C2)', 'Linhas pela C3',
       'Linhas pendentes ou sem C3',
@@ -325,7 +325,7 @@ AbaRelatorio abaC3(List<LinhaComparativo> linhas) {
 /// Cabeçalho da aba Final (resultado por produto e lote).
 List<String> cabecalhoFinal(Natureza n) => switch (n) {
       Natureza.material => [
-          'Código', 'Descrição', 'Quantidade', 'Prateleira',
+          'Código', 'Descrição', 'Quantidade', 'Prateleiras',
           'Linhas por consenso (C1 = C2)', 'Linhas pela C3', 'Origem',
         ],
       Natureza.gas => [

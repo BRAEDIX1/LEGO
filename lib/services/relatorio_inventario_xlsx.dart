@@ -101,7 +101,7 @@ List<int>? gerarXlsx(List<AbaRelatorio> abas) {
     final centrar = <int>{
       if (fmt && aba.linhas.isNotEmpty)
         for (var c = 0; c < aba.linhas[cab].length; c++)
-          if (const ['Código', 'Lote', 'Prateleira']
+          if (const ['Código', 'Lote', 'Prateleira', 'Prateleiras']
               .contains(aba.linhas[cab][c]))
             c,
     };
