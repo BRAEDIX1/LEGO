@@ -237,11 +237,57 @@ void main() {
       expect(c.local, g.local);
       expect(c.produto, g.produto);
     });
-    test('Material: local = prateleira normalizada', () {
+    test('Material: local = ÁREA; a prateleira é o pacote dentro dela', () {
       final x = itemDistribuicaoDe(
-          l(nat: Natureza.material, prateleira: ' a-12 ', localId: 'X'));
-      expect(x.local, 'PRAT:A-12');
-      expect(x.produto, 'MAT:P1');
+          l(nat: Natureza.material, prateleira: ' a-12 ', localId: 'deposito'));
+      expect(x.local, 'LOC:DEPOSITO');
+      expect(x.produto, 'PRAT:A-12');
+    });
+    test('Material sem área: a prateleira vira o local', () {
+      final ml = LinhaComparativo(
+        chave: 'M|x',
+        natureza: Natureza.material,
+        codigo: 'P1',
+        prateleira: '2A3',
+        c1: q(1),
+        c2: q(2),
+        resultado: ResultadoLinha.emAnalise,
+      );
+      expect(itemDistribuicaoDe(ml).local, 'PRAT:2A3');
+    });
+    test('piloto 009: 2 áreas de material, 2 pessoas → uma área para cada',
+        () {
+      LinhaComparativo m(String area, String prat, String cod, double v) =>
+          LinhaComparativo(
+            chave: 'MAT:$cod|$prat',
+            natureza: Natureza.material,
+            codigo: cod,
+            localId: area,
+            localNome: area,
+            prateleira: prat,
+            c1: q(v),
+            c2: q(v + 1),
+            resultado: ResultadoLinha.emAnalise,
+          );
+      final linhas = [
+        m('DEPOSITO', '2A3', '50000869', 5),
+        m('DEPOSITO', '5T4', '50000987', 2),
+        m('DEPOSITO', '7Y7', '10000109', 6),
+        m('DEPOSITO', '3E3', '50000874', 6),
+        m('DESCARTAVEIS', '4F5', '30014292', 4),
+        m('DESCARTAVEIS', '4G6', '30014294', 4),
+        m('DESCARTAVEIS', '8K7', '30014291', 4),
+      ];
+      final itens = linhas.map(itemDistribuicaoDe).toList();
+      final d = distribuirPorLocal(itens, ['a', 'b']);
+      final dono = donoDe(d);
+      final porArea = <String, Set<String>>{};
+      for (final x in itens) {
+        porArea.putIfAbsent(x.local, () => {}).add(dono[x.id]!);
+      }
+      expect(porArea['LOC:DEPOSITO']!.length, 1);
+      expect(porArea['LOC:DESCARTAVEIS']!.length, 1);
+      expect(porArea['LOC:DEPOSITO'], isNot(porArea['LOC:DESCARTAVEIS']));
     });
     test('só na C1 (C2 vazia) ou zero: esforço mínimo 1', () {
       expect(itemDistribuicaoDe(l(c1: 4, c2: null)).esforco, 4);
@@ -271,5 +317,24 @@ void main() {
       t('5', 'Enchimento', 'P1', 'L1'),
     ]..sort(ordemDeExecucaoC3);
     expect(ts.map((x) => x.docId), ['4', '2', '5', '3', '1']);
+  });
+
+  test('aparelho: material em ordem área → prateleira → produto', () {
+    TarefaC3Local t(String id, String area, String prat, String cod) =>
+        TarefaC3Local(
+            docId: id,
+            chave: id,
+            tipo: 'material',
+            codigo: cod,
+            localNome: area,
+            prateleira: prat,
+            versao: 1);
+    final ts = [
+      t('1', 'DESCARTÁVEIS', '8K7', 'C'),
+      t('2', 'DEPÓSITO', '7Y7', 'A'),
+      t('3', 'DEPÓSITO', '3E3', 'B'),
+      t('4', 'DESCARTÁVEIS', '4F5', 'D'),
+    ]..sort(ordemDeExecucaoC3);
+    expect(ts.map((x) => x.docId), ['3', '2', '4', '1']);
   });
 }

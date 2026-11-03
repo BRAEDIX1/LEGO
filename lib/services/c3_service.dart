@@ -23,6 +23,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'package:lego/services/operacao_atomica.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/services/audit_event_service.dart';
 import 'package:lego/services/c3.dart';
@@ -148,7 +149,7 @@ class C3Service {
       throw OperacaoNaoPermitidaException('Chamar participantes', inventarioId,
           'a C3 não está pendente (${StatusRodada.rotulo(antes)})');
     }
-    await _fs.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_fs, (tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
       if (inv.statusRodada(_c3) != StatusRodada.pendente) {
@@ -202,7 +203,7 @@ class C3Service {
       throw OperacaoNaoPermitidaException('Iniciar C3', inventarioId,
           'a C3 não está aguardando participantes');
     }
-    await _fs.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_fs, (tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
       if (inv.statusRodada(_c3) != StatusRodada.aguardandoParticipantes) {
@@ -242,7 +243,7 @@ class C3Service {
       throw OperacaoNaoPermitidaException(
           'Redistribuir', inventarioId, 'a C3 não está em andamento');
     }
-    await _fs.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_fs, (tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
       if (inv.statusRodada(_c3) != StatusRodada.emAndamento) {
@@ -344,7 +345,7 @@ class C3Service {
     }
 
     // Libera: só agora os aparelhos baixam / sincronizam.
-    await _fs.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_fs, (tx) async {
       final s = await tx.get(_inv(inventarioId));
       final atual = Inventario.fromFirestore(s).statusRodada(_c3);
       if (atual != st) {
@@ -380,7 +381,7 @@ class C3Service {
       throw OperacaoNaoPermitidaException(
           'Encerrar C3', inventarioId, 'a C3 não está em andamento');
     }
-    await _fs.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_fs, (tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
       if (inv.statusRodada(_c3) != StatusRodada.emAndamento) {
@@ -632,7 +633,7 @@ class C3Service {
     for (final t in aEnviar) {
       (DecisaoSync, String?) decisao;
       try {
-        decisao = await _fs.runTransaction<(DecisaoSync, String?)>((tx) async {
+        decisao = await executarAtomico<(DecisaoSync, String?)>(_fs, (tx) async {
           final invSnap = await tx.get(_inv(invId));
           final linhaRef = _linhas(invId).doc(t.docId);
           final linhaSnap = await tx.get(linhaRef);

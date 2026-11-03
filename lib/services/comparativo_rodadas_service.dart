@@ -17,6 +17,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
+import 'package:lego/services/operacao_atomica.dart';
 import 'package:lego/data/repositories/produtos_repository.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/services/audit_event_service.dart';
@@ -77,7 +78,7 @@ class ComparativoRodadasService {
     // validação dentro da transação continua (corrida entre analistas).
     validar(await ref.get(const GetOptions(source: Source.server)));
 
-    await _fs.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_fs, (tx) async {
       final snap = await tx.get(ref);
       validar(snap);
 
@@ -253,7 +254,7 @@ class ComparativoRodadasService {
     }
 
     // 1) Reserva a execução (idempotência / dois analistas ao mesmo tempo).
-    final jaPronto = await _fs.runTransaction<bool>((tx) async {
+    final jaPronto = await executarAtomico<bool>(_fs, (tx) async {
       final snap = await tx.get(ref);
       if (!snap.exists) {
         throw OperacaoNaoPermitidaException(

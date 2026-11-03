@@ -2,6 +2,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
+import 'package:lego/services/operacao_atomica.dart';
+
 /// Tipos de evento gravados em `inventarios/{id}/eventos` (Plano §15).
 /// Strings gravadas no Firestore: não renomear depois de publicado.
 class TipoEvento {
@@ -64,7 +66,7 @@ class AuditEventService {
   /// Chamar DEPOIS de todas as leituras da transação (regra do Firestore:
   /// leituras antes de escritas).
   static void registrarNaTransacao(
-    Transaction tx, {
+    OperacaoAtomica tx, {
     required String inventarioId,
     required String tipo,
     String? uid,

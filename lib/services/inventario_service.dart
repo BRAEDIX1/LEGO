@@ -2,6 +2,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:lego/services/operacao_atomica.dart';
 import 'package:lego/config/fluxo2_config.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/models/participante.dart';
@@ -246,7 +247,7 @@ class InventarioService {
   /// B1: agora em transação, e sem o fallback por timestamp — se falhar, a
   /// criação falha (antes gerava um número de 6 dígitos sem aviso).
   Future<String> _gerarProximoNumero() async {
-    final proximoNumero = await _firestore.runTransaction<int>((tx) async {
+    final proximoNumero = await executarAtomico<int>(_firestore, (tx) async {
       final snapshot = await tx.get(_contadoresRef);
       final atual = snapshot.data()?[_campoUltimoInventario];
       final proximo = (atual is num ? atual.toInt() : 0) + 1;
@@ -312,7 +313,7 @@ class InventarioService {
     // ID gerado fora da transação: se ela repetir, usa o mesmo ID.
     final novoRef = _inventarios.doc();
 
-    return _firestore.runTransaction<ResultadoInventarioCompleto>((tx) async {
+    return executarAtomico<ResultadoInventarioCompleto>(_firestore, (tx) async {
       // ---------- LEITURAS ----------
       final contadores = await tx.get(_contadoresRef);
       final dados = contadores.data() ?? <String, dynamic>{};
@@ -531,7 +532,7 @@ class InventarioService {
     final partRef = invRef.collection('participantes').doc(user.uid);
     final sufixo = Rodadas.sufixo(rodada);
 
-    return _firestore.runTransaction<ResultadoEntradaRodada>((tx) async {
+    return executarAtomico<ResultadoEntradaRodada>(_firestore, (tx) async {
       // ---------- LEITURAS ----------
       final invSnap = await tx.get(invRef);
       if (!invSnap.exists) {
@@ -646,7 +647,7 @@ class InventarioService {
     final partRef = invRef.collection('participantes').doc(user.uid);
     final sufixo = Rodadas.sufixo(rodada);
 
-    await _firestore.runTransaction<void>((tx) async {
+    await executarAtomico<void>(_firestore, (tx) async {
       // ---------- LEITURAS ----------
       final invSnap = await tx.get(invRef);
       if (!invSnap.exists) {
@@ -1072,7 +1073,7 @@ class InventarioService {
       final uid = FirebaseAuth.instance.currentUser?.uid;
       final invRef = _inventarios.doc(inventarioId);
 
-      await _firestore.runTransaction<void>((tx) async {
+      await executarAtomico<void>(_firestore, (tx) async {
         // ---------- LEITURAS ----------
         final invSnap = await tx.get(invRef);
         if (!invSnap.exists) {

@@ -40,10 +40,9 @@ Map<String, List<String>> distribuirTarefas(
 }
 
 /// Item 2 (03/11) — C3-D: uma linha da C3 para a divisão por local.
-/// [local]: chave TÉCNICA do local (não o nome visível): Gás/Cilindro =
-/// `localizacaoId`; Material = prateleira normalizada.
-/// [produto]: o produto naquele local (um produto num local nunca é
-/// dividido entre duas pessoas). [esforco]: volume a recontar (≥ 1).
+/// [local]: chave TÉCNICA da área (`localizacaoId`; o nome visível só como
+/// reserva). [produto]: o pacote indivisível dentro da área — Gás/Cilindro =
+/// o produto; Material = a prateleira. [esforco]: volume a recontar (≥ 1).
 class ItemDistribuicaoC3 {
   final String id;
   final String local;
@@ -62,22 +61,35 @@ class ItemDistribuicaoC3 {
 /// linha inteira, não só a diferença).
 ItemDistribuicaoC3 itemDistribuicaoDe(LinhaComparativo l) {
   String limpo(String? s) => (s ?? '').trim().toUpperCase();
+  // 03/11 (piloto do 009): o LOCAL é a ÁREA (localizacaoId) para todas as
+  // naturezas. Antes, em Material o local era a prateleira, e prateleiras da
+  // mesma área iam para pessoas diferentes — as duas pessoas percorriam as
+  // duas áreas. A prateleira passa a ser o pacote indivisível dentro da área
+  // (uma prateleira nunca é dividida entre duas pessoas).
+  final id = limpo(l.localId);
+  final nome = limpo(l.localNome);
+  final prat = limpo(l.prateleira);
   final String local;
-  if (l.natureza == Natureza.material) {
-    final prat = limpo(l.prateleira);
-    local = prat.isNotEmpty
-        ? 'PRAT:$prat'
-        : 'LOC:${limpo(l.localId).isNotEmpty ? limpo(l.localId) : '(sem local)'}';
+  if (id.isNotEmpty) {
+    local = 'LOC:$id';
+  } else if (nome.isNotEmpty) {
+    local = 'LOC:$nome';
+  } else if (l.natureza == Natureza.material && prat.isNotEmpty) {
+    local = 'PRAT:$prat'; // material sem área: a prateleira é o local
   } else {
-    final id = limpo(l.localId);
-    local = 'LOC:${id.isNotEmpty ? id : (limpo(l.localNome).isNotEmpty ? limpo(l.localNome) : '(sem local)')}';
+    local = 'LOC:(sem local)';
   }
   // Gás e Cilindro do mesmo código no mesmo local são a mesma pilha física:
   // mesma chave de produto, para irem à mesma pessoa.
   final cod = l.codigo.trim().isNotEmpty
       ? l.codigo.trim().toUpperCase()
       : (l.tipoCilindro ?? l.chave);
-  final produto = l.natureza == Natureza.material ? 'MAT:$cod' : 'GC:$cod';
+  final String produto;
+  if (l.natureza == Natureza.material) {
+    produto = prat.isNotEmpty ? 'PRAT:$prat' : 'MAT:$cod';
+  } else {
+    produto = 'GC:$cod';
+  }
   final a = l.c1?.quantidade ?? 0;
   final b = l.c2?.quantidade ?? 0;
   final esforco = a > b ? a : b;
@@ -234,18 +246,16 @@ Map<String, List<String>> distribuirPorLocal(
   };
 }
 
-/// Item 2 (03/11) — ordem de execução no aparelho: local → produto → lote
-/// (antes era só por código, e o operador ia e voltava entre locais).
-/// Material: o local é a prateleira.
+/// Item 2 (03/11) — ordem de execução no aparelho: área → prateleira →
+/// produto → lote (antes era só por código, e o operador ia e voltava entre
+/// locais).
 int ordemDeExecucaoC3(TarefaC3Local a, TarefaC3Local b) {
-  String local(TarefaC3Local t) => (t.tipo == 'material' &&
-              t.prateleira.trim().isNotEmpty
-          ? t.prateleira
-          : (t.localNome ?? t.localId ?? ''))
-      .trim()
-      .toUpperCase();
+  // 03/11: área → prateleira (material) → produto → lote.
+  String area(TarefaC3Local t) =>
+      (t.localNome ?? t.localId ?? '').trim().toUpperCase();
   for (final c in [
-    local(a).compareTo(local(b)),
+    area(a).compareTo(area(b)),
+    a.prateleira.trim().toUpperCase().compareTo(b.prateleira.trim().toUpperCase()),
     a.codigo.compareTo(b.codigo),
     (a.lote ?? '').compareTo(b.lote ?? ''),
     a.docId.compareTo(b.docId),
