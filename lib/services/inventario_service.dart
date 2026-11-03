@@ -453,6 +453,23 @@ class InventarioService {
 
     final invRef = _inventarios.doc(inventarioId);
 
+    // Item 7: as recusas previsíveis, conferidas ANTES da transação (no
+    // Windows, uma transação que falha pode derrubar o app).
+    {
+      final s = await invRef.get(const GetOptions(source: Source.server));
+      if (!s.exists) {
+        throw OperacaoNaoPermitidaException(
+            'Encerrar inventário', inventarioId, 'inventário não encontrado');
+      }
+      final inv = Inventario.fromFirestore(s);
+      if (!inv.isFluxoMaquinaEstados) {
+        throw OperacaoNaoPermitidaException('Encerrar inventário', inventarioId,
+            'inventário do fluxo legado; use finalizarInventario');
+      }
+      final pendencias = inv.pendenciasParaEncerrar();
+      if (pendencias.isNotEmpty) throw EncerramentoBloqueadoException(pendencias);
+    }
+
     await _firestore.runTransaction<void>((tx) async {
       // ---------- LEITURAS ----------
       final invSnap = await tx.get(invRef);

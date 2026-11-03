@@ -400,4 +400,57 @@ void main() {
       expect(p.c3Consolidada!.volume, 200);
     });
   });
+
+  // Item 1 (03/11): cilindros — a métrica é cheios + vazios; a composição
+  // CHEIO/VAZIO da linha recontada vem da C3, a das linhas em consenso vem
+  // da C1. Mesmo produto em áreas distintas: um único consolidado.
+  group('T-C3-009 — cilindro: cheios e vazios no consolidado', () {
+    TotaisRodada cv(double c, double v) =>
+        TotaisRodada(quantidade: c + v, cheio: c, vazio: v);
+    LinhaComparativo cil(String local, TotaisRodada c1, TotaisRodada c2,
+        {TotaisRodada? c3}) {
+      final emAnalise = !c1.mesmoValor(c2);
+      return LinhaComparativo(
+        chave: 'CIL:P1|$local',
+        natureza: Natureza.cilindro,
+        codigo: 'P1',
+        descricao: 'CIL P1',
+        localId: local,
+        localNome: 'AREA_$local',
+        c1: c1,
+        c2: c2,
+        resultado:
+            emAnalise ? ResultadoLinha.emAnalise : ResultadoLinha.encerrada,
+        motivo: emAnalise ? MotivoAnalise.divergente : null,
+        c3: c3,
+        c3Status: c3 == null ? null : 'sincronizada',
+      );
+    }
+
+    // A: C1 8+5 = 13, C2 7+6 = 13 → consenso (13; composição da C1).
+    // B: C1 4+2 = 6, C2 5+2 = 7 → C3 3+3 = 6.
+    final ls = [
+      cil('A', cv(8, 5), cv(7, 6)),
+      cil('B', cv(4, 2), cv(5, 2), c3: cv(3, 3)),
+    ];
+    final p = consolidarPorProduto(ls, Natureza.cilindro).single;
+
+    test('consolidado = 13 + 6 = 19; C3 bruta da área B continua 6', () {
+      expect(p.situacao, SituacaoC3Produto.completa);
+      expect(p.c1!.quantidade, 19);
+      expect(p.c2!.quantidade, 20);
+      expect(p.c3Consolidada!.quantidade, 19);
+      expect(p.valorFinal!.quantidade, 19);
+      expect(ls[1].c3!.quantidade, 6);
+    });
+    test('composição: cheios 8 + 3 = 11, vazios 5 + 3 = 8', () {
+      expect(p.c3Consolidada!.cheio, 11);
+      expect(p.c3Consolidada!.vazio, 8);
+    });
+    test('mesma C1 = C2 em cheios+vazios, mas composição diferente: consenso',
+        () {
+      // A comparação é pela métrica (13 × 13); a composição é informativa.
+      expect(ls[0].emAnalise, isFalse);
+    });
+  });
 }

@@ -338,8 +338,11 @@ class _RelatorioAoLadoState extends State<_RelatorioAoLado> {
     final m = MonitorService();
     _inv = m.streamInventario(widget.inventarioId);
     _linhas = C3Service().streamLinhas(widget.inventarioId);
-    _totC1 = m.streamSincronizadosPorUsuario(widget.inventarioId, Rodadas.c1);
-    _totC2 = m.streamSincronizadosPorUsuario(widget.inventarioId, Rodadas.c2);
+    // Item 6 (B97): rodada encerrada não fica em escuta.
+    _totC1 =
+        m.streamSincronizadosAteEncerrar(widget.inventarioId, Rodadas.c1);
+    _totC2 =
+        m.streamSincronizadosAteEncerrar(widget.inventarioId, Rodadas.c2);
   }
 
   int _soma(Map<String, int>? m) =>
@@ -368,7 +371,13 @@ class _RelatorioAoLadoState extends State<_RelatorioAoLado> {
               inv.statusRodada(Rodadas.c2),
               rec.status,
             ].join('|');
-            final chaveContagem = '${_soma(t1.data)}|${_soma(t2.data)}';
+            // Item 6 (B97): rodada encerrada não muda mais; o relatório dela
+            // é relido do servidor quando a etapa muda (chaveLanc), nunca do
+            // cache (sem escuta, o cache não é garantia de completude).
+            String parte(String r, AsyncSnapshot<Map<String, int>> t) =>
+                inv.rodadaEncerrada(r) ? 'encerrada' : '${_soma(t.data)}';
+            final chaveContagem =
+                '${parte(Rodadas.c1, t1)}|${parte(Rodadas.c2, t2)}';
             final sincC3 = linhas
                 .where((l) =>
                     l.naC3 && l.c3Status == StatusTarefaC3.sincronizada)

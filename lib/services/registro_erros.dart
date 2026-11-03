@@ -56,6 +56,45 @@ class RegistroErros {
     };
     await registrarTexto('inicio', 'App iniciado ($ambiente) · '
         '${Platform.operatingSystem} ${Platform.operatingSystemVersion}');
+    // Item 7: a sessão anterior fechou no meio de uma ação?
+    try {
+      final m = _marca;
+      if (m != null && m.existsSync()) {
+        await registrarTexto('QUEDA',
+            'a sessão anterior fechou sem terminar: ${m.readAsStringSync().trim()}');
+        m.deleteSync();
+      }
+    } catch (_) {}
+  }
+
+  /// Item 7: arquivo com a ação em curso (gravado na hora, sobrevive a uma
+  /// queda nativa que não passa pelos tratadores do Dart).
+  static File? get _marca {
+    final f = _arquivo;
+    return f == null
+        ? null
+        : File('${f.parent.path}${Platform.pathSeparator}acao_em_curso.txt');
+  }
+
+  /// Marca o início de uma ação do analista (encerrar rodada, gerar
+  /// comparativo, distribuir C3...). Também vai para o log.
+  static void marcarAcao(String nome) {
+    final m = _marca;
+    if (m == null) return;
+    final linha = '${DateTime.now().toIso8601String()} · $nome';
+    try {
+      m.writeAsStringSync(linha, flush: true);
+    } catch (_) {}
+    _gravar('--- $linha · início\n');
+  }
+
+  /// A ação terminou (com ou sem erro tratado): apaga a marca.
+  static void concluirAcao() {
+    final m = _marca;
+    if (m == null) return;
+    try {
+      if (m.existsSync()) m.deleteSync();
+    } catch (_) {}
   }
 
   /// Erro com pilha. [origem]: `flutter` | `plataforma` | `zona` | `<tela>`.

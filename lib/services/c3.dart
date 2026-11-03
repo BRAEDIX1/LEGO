@@ -1,7 +1,9 @@
 // lib/services/c3.dart
 //
 // Entrega 3 (teste acelerado): regras PURAS da C3 distribuída/offline.
-// - distribuição justa (máx − mín ≤ 1), aleatória dentro do balanceamento;
+// - distribuição POR LOCAL com peso de esforço (C3-D, item 2 de 03/11):
+//   [distribuirPorLocal]. O sorteio linha a linha ([distribuirTarefas])
+//   fica só para compatibilidade dos testes antigos;
 // - tarefa local do aparelho (pode ser concluída sem internet);
 // - decisão de aceitar/recusar uma sincronização (versão da atribuição).
 
@@ -35,6 +37,222 @@ Map<String, List<String>> distribuirTarefas(
     out[u[i % u.length]]!.add(c[i]);
   }
   return out;
+}
+
+/// Item 2 (03/11) — C3-D: uma linha da C3 para a divisão por local.
+/// [local]: chave TÉCNICA do local (não o nome visível): Gás/Cilindro =
+/// `localizacaoId`; Material = prateleira normalizada.
+/// [produto]: o produto naquele local (um produto num local nunca é
+/// dividido entre duas pessoas). [esforco]: volume a recontar (≥ 1).
+class ItemDistribuicaoC3 {
+  final String id;
+  final String local;
+  final String produto;
+  final double esforco;
+  const ItemDistribuicaoC3({
+    required this.id,
+    required this.local,
+    required this.produto,
+    required this.esforco,
+  });
+}
+
+/// Item 2 — monta o item de distribuição de uma linha do comparativo.
+/// Esforço = max(C1, C2) na métrica da linha, com mínimo 1 (a C3 reconta a
+/// linha inteira, não só a diferença).
+ItemDistribuicaoC3 itemDistribuicaoDe(LinhaComparativo l) {
+  String limpo(String? s) => (s ?? '').trim().toUpperCase();
+  final String local;
+  if (l.natureza == Natureza.material) {
+    final prat = limpo(l.prateleira);
+    local = prat.isNotEmpty
+        ? 'PRAT:$prat'
+        : 'LOC:${limpo(l.localId).isNotEmpty ? limpo(l.localId) : '(sem local)'}';
+  } else {
+    final id = limpo(l.localId);
+    local = 'LOC:${id.isNotEmpty ? id : (limpo(l.localNome).isNotEmpty ? limpo(l.localNome) : '(sem local)')}';
+  }
+  // Gás e Cilindro do mesmo código no mesmo local são a mesma pilha física:
+  // mesma chave de produto, para irem à mesma pessoa.
+  final cod = l.codigo.trim().isNotEmpty
+      ? l.codigo.trim().toUpperCase()
+      : (l.tipoCilindro ?? l.chave);
+  final produto = l.natureza == Natureza.material ? 'MAT:$cod' : 'GC:$cod';
+  final a = l.c1?.quantidade ?? 0;
+  final b = l.c2?.quantidade ?? 0;
+  final esforco = a > b ? a : b;
+  return ItemDistribuicaoC3(
+    id: l.docId,
+    local: local,
+    produto: produto,
+    esforco: esforco < 1 ? 1 : esforco,
+  );
+}
+
+/// Item 2 (03/11) — C3-D: divisão da C3 POR LOCAL, com peso de esforço.
+/// Substitui o sorteio linha a linha ([distribuirTarefas]), que mandava
+/// várias pessoas aos mesmos locais (piloto 007).
+///
+/// Regras (proposta C3 v2, aprovada na revisão):
+/// 1. Unidade de trabalho = local: todas as linhas de um local vão para a
+///    mesma pessoa.
+/// 2. Esforço do local = soma do esforço das linhas.
+/// 3. LPT: locais do mais pesado ao mais leve, cada um para quem estiver com
+///    menos carga.
+/// 4. Local maior que 1,5 × a parte justa (esforço total / participantes):
+///    é dividido POR PRODUTO entre k pessoas DIFERENTES, com
+///    k = min(ceil(esforço do local / (1,5 × parte justa)), produtos no
+///    local, participantes). Um produto num local nunca é dividido.
+/// 5. Determinística (sem sorteio). Desempate: menor carga, depois menos
+///    locais já recebidos, depois o uid em ordem alfabética. Locais de mesmo
+///    esforço: ordem alfabética da chave.
+/// Invariantes (testadas): (local, produto) → exatamente 1 responsável; toda
+/// linha tem exatamente 1 responsável; todo uid aparece no mapa (mesmo com
+/// zero); a lista de cada pessoa sai em ordem local → produto → id.
+/// Um local só é dividido quando passa de [fatorDivisaoLocal] × a parte
+/// justa (revisão de 03/11: evitar dividir local só um pouco acima da média).
+const double fatorDivisaoLocal = 1.5;
+
+Map<String, List<String>> distribuirPorLocal(
+  List<ItemDistribuicaoC3> itens,
+  List<String> uids,
+) {
+  final pessoas = uids.toSet().toList()..sort();
+  if (pessoas.isEmpty) {
+    throw ArgumentError('distribuição sem participantes');
+  }
+  final carga = {for (final u in pessoas) u: 0.0};
+  final unidades = {for (final u in pessoas) u: 0};
+  final atrib = {for (final u in pessoas) u: <ItemDistribuicaoC3>[]};
+
+  // local → produto → itens
+  final porLocal = <String, Map<String, List<ItemDistribuicaoC3>>>{};
+  for (final it in itens) {
+    porLocal
+        .putIfAbsent(it.local, () => {})
+        .putIfAbsent(it.produto, () => [])
+        .add(it);
+  }
+  double soma(Iterable<ItemDistribuicaoC3> xs) =>
+      xs.fold(0.0, (s, x) => s + x.esforco);
+  final total = soma(itens);
+  final parteJusta = total / pessoas.length;
+  final limiteDivisao = parteJusta * fatorDivisaoLocal;
+
+  String menosCarregado(Set<String> excluir) {
+    String? melhor;
+    for (final u in pessoas) {
+      if (excluir.contains(u)) continue;
+      if (melhor == null) {
+        melhor = u;
+        continue;
+      }
+      final cu = carga[u]!, cm = carga[melhor]!;
+      if (cu < cm - 1e-9 ||
+          ((cu - cm).abs() <= 1e-9 && unidades[u]! < unidades[melhor]!)) {
+        melhor = u;
+      }
+    }
+    return melhor!;
+  }
+
+  void entregar(String u, Iterable<ItemDistribuicaoC3> xs) {
+    atrib[u]!.addAll(xs);
+    carga[u] = carga[u]! + soma(xs);
+    unidades[u] = unidades[u]! + 1;
+  }
+
+  final locais = porLocal.keys.toList()
+    ..sort((a, b) {
+      final ea = soma(porLocal[a]!.values.expand((x) => x));
+      final eb = soma(porLocal[b]!.values.expand((x) => x));
+      final c = eb.compareTo(ea);
+      return c != 0 ? c : a.compareTo(b);
+    });
+
+  for (final local in locais) {
+    final produtos = porLocal[local]!;
+    final esforcoLocal = soma(produtos.values.expand((x) => x));
+    // Revisão de 03/11: só divide o local quando ele passa CLARAMENTE da
+    // parte justa (limite = 1,5 × parte justa), para não espalhar gente
+    // num local só um pouco maior que a média (ex.: 51 com média 50).
+    final k = esforcoLocal <= limiteDivisao + 1e-9
+        ? 1
+        : [
+            (esforcoLocal / limiteDivisao).ceil(),
+            produtos.length,
+            pessoas.length,
+          ].reduce((a, b) => a < b ? a : b);
+    if (k <= 1) {
+      entregar(menosCarregado(const {}),
+          produtos.values.expand((x) => x).toList());
+      continue;
+    }
+    // Divide os pacotes de produto do local em k grupos (LPT interno)...
+    final pacotes = produtos.entries.toList()
+      ..sort((a, b) {
+        final c = soma(b.value).compareTo(soma(a.value));
+        return c != 0 ? c : a.key.compareTo(b.key);
+      });
+    final grupos = List.generate(k, (_) => <ItemDistribuicaoC3>[]);
+    final pesoGrupo = List.filled(k, 0.0);
+    for (final p in pacotes) {
+      var g = 0;
+      for (var i = 1; i < k; i++) {
+        if (pesoGrupo[i] < pesoGrupo[g] - 1e-9) g = i;
+      }
+      grupos[g].addAll(p.value);
+      pesoGrupo[g] += soma(p.value);
+    }
+    // ...e entrega cada grupo, do mais pesado ao mais leve, a pessoas
+    // DIFERENTES (as menos carregadas).
+    final ordem = List.generate(k, (i) => i)
+      ..sort((a, b) {
+        final c = pesoGrupo[b].compareTo(pesoGrupo[a]);
+        return c != 0 ? c : a.compareTo(b);
+      });
+    final usados = <String>{};
+    for (final g in ordem) {
+      if (grupos[g].isEmpty) continue;
+      final u = menosCarregado(usados);
+      usados.add(u);
+      entregar(u, grupos[g]);
+    }
+  }
+
+  return {
+    for (final u in pessoas)
+      u: (atrib[u]!
+            ..sort((a, b) {
+              final c = a.local.compareTo(b.local);
+              if (c != 0) return c;
+              final d = a.produto.compareTo(b.produto);
+              return d != 0 ? d : a.id.compareTo(b.id);
+            }))
+          .map((x) => x.id)
+          .toList(),
+  };
+}
+
+/// Item 2 (03/11) — ordem de execução no aparelho: local → produto → lote
+/// (antes era só por código, e o operador ia e voltava entre locais).
+/// Material: o local é a prateleira.
+int ordemDeExecucaoC3(TarefaC3Local a, TarefaC3Local b) {
+  String local(TarefaC3Local t) => (t.tipo == 'material' &&
+              t.prateleira.trim().isNotEmpty
+          ? t.prateleira
+          : (t.localNome ?? t.localId ?? ''))
+      .trim()
+      .toUpperCase();
+  for (final c in [
+    local(a).compareTo(local(b)),
+    a.codigo.compareTo(b.codigo),
+    (a.lote ?? '').compareTo(b.lote ?? ''),
+    a.docId.compareTo(b.docId),
+  ]) {
+    if (c != 0) return c;
+  }
+  return 0;
 }
 
 /// Estado da tarefa NO APARELHO.

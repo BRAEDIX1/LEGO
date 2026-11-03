@@ -4,6 +4,8 @@
 // Regra de negócio aqui, não nos widgets: o Desktop definitivo poderá usar
 // as mesmas operações.
 
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -84,6 +86,47 @@ class MonitorService {
         }
         return out;
       });
+
+  /// Item 6 (B97): igual a [streamSincronizadosPorUsuario], mas a consulta
+  /// dos lançamentos só fica em escuta ENQUANTO a rodada está aberta. Com a
+  /// rodada encerrada (as regras recusam lançamento novo), faz UMA leitura
+  /// do servidor e para de escutar. Antes, C1 e C2 encerradas continuavam
+  /// em escuta e eram relidas a cada abertura do painel.
+  Stream<Map<String, int>> streamSincronizadosAteEncerrar(
+      String inventarioId, String rodada) {
+    late final StreamController<Map<String, int>> c;
+    StreamSubscription<Inventario?>? subInv;
+    StreamSubscription<Map<String, int>>? subLanc;
+    var lidaFinal = false;
+    c = StreamController<Map<String, int>>(
+      onListen: () {
+        subInv = streamInventario(inventarioId).listen((inv) {
+          if (inv == null || c.isClosed) return;
+          if (!inv.rodadaEncerrada(rodada)) {
+            lidaFinal = false;
+            subLanc ??= streamSincronizadosPorUsuario(inventarioId, rodada)
+                .listen(c.add, onError: c.addError);
+            return;
+          }
+          subLanc?.cancel();
+          subLanc = null;
+          if (lidaFinal) return;
+          lidaFinal = true;
+          sincronizadosPorUsuario(inventarioId, rodada).then((m) {
+            if (!c.isClosed) c.add(m);
+          }, onError: (Object e) {
+            lidaFinal = false; // tenta de novo na próxima mudança
+            if (!c.isClosed) c.addError(e);
+          });
+        }, onError: c.addError);
+      },
+      onCancel: () async {
+        await subInv?.cancel();
+        await subLanc?.cancel();
+      },
+    );
+    return c.stream;
+  }
 
   /// Lançamentos de uma rodada já no servidor, por usuário (leitura única).
   Future<Map<String, int>> sincronizadosPorUsuario(

@@ -53,8 +53,7 @@ class ComparativoRodadasService {
     final uid = _uid();
     final ref = _inventarios.doc(inventarioId);
 
-    await _fs.runTransaction<void>((tx) async {
-      final snap = await tx.get(ref);
+    void validar(DocumentSnapshot<Map<String, dynamic>> snap) {
       if (!snap.exists) {
         throw OperacaoNaoPermitidaException(
             'Encerrar rodada', inventarioId, 'inventário não encontrado');
@@ -68,6 +67,17 @@ class ComparativoRodadasService {
         throw OperacaoNaoPermitidaException('Encerrar rodada', inventarioId,
             '${Rodadas.rotulo(rodada)} já está encerrada');
       }
+    }
+
+    // Item 7: valida ANTES da transação (leitura do servidor). No Windows,
+    // uma transação que falha pode derrubar o app (biblioteca nativa do
+    // Firestore); assim, os casos previsíveis viram mensagem na tela. A
+    // validação dentro da transação continua (corrida entre analistas).
+    validar(await ref.get(const GetOptions(source: Source.server)));
+
+    await _fs.runTransaction<void>((tx) async {
+      final snap = await tx.get(ref);
+      validar(snap);
 
       tx.update(ref, {
         'contagens.$rodada.status': StatusRodada.encerrada,
@@ -200,6 +210,37 @@ class ComparativoRodadasService {
 
     // L4: tipo do inventário (só o consolidado dele entra no comparativo).
     Natureza? naturezaInv;
+
+    // Item 7: as mesmas recusas, conferidas ANTES da transação.
+    {
+      final snap = await ref.get(const GetOptions(source: Source.server));
+      if (!snap.exists) {
+        throw OperacaoNaoPermitidaException(
+            'Comparativo', inventarioId, 'inventário não encontrado');
+      }
+      final inv = Inventario.fromFirestore(snap);
+      if (!inv.isFluxoMaquinaEstados || !inv.isAtivo) {
+        throw OperacaoNaoPermitidaException(
+            'Comparativo', inventarioId, 'inventário não está ativo');
+      }
+      for (final r in Rodadas.base) {
+        if (!inv.rodadaEncerrada(r)) {
+          throw OperacaoNaoPermitidaException('Comparativo', inventarioId,
+              'encerre a ${Rodadas.rotulo(r)} antes');
+        }
+      }
+      final rec = inv.reconciliacao ?? const ReconciliacaoInfo();
+      if (rec.status == StatusReconciliacao.executando) {
+        throw OperacaoNaoPermitidaException('Comparativo', inventarioId,
+            'já está sendo gerado por outro aparelho; aguarde e atualize');
+      }
+      final c3 = inv.statusRodada(Rodadas.c3);
+      if (refazer &&
+          (c3 == StatusRodada.emAndamento || c3 == StatusRodada.encerrada)) {
+        throw OperacaoNaoPermitidaException('Comparativo', inventarioId,
+            'a C3 já começou; o comparativo não pode ser refeito');
+      }
+    }
 
     // 1) Reserva a execução (idempotência / dois analistas ao mesmo tempo).
     final jaPronto = await _fs.runTransaction<bool>((tx) async {

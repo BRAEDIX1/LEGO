@@ -27,6 +27,7 @@ import 'package:lego/services/inventario_service.dart';
 import 'package:lego/services/monitor_service.dart';
 import 'package:lego/services/relatorio_inventario_service.dart';
 import 'package:lego/services/acompanhamento_sync_service.dart';
+import 'package:lego/services/registro_erros.dart';
 import 'package:lego/services/relatorio_inventario.dart' show AbaRelatorio;
 import 'package:lego/services/relatorio_inventario_xlsx.dart' show gerarXlsx;
 import 'package:lego/services/sincronizacao/pendencias_sync.dart'
@@ -163,6 +164,8 @@ class _PainelAnalistaState extends State<PainelAnalista> {
   /// Inventário antigo (sem tipo): consolidado escolhido para a C3.
   Natureza? _naturezaC3;
   Map<String, Map<String, int>> _sinc = const {}; // rodada → uid → qtd
+  // Item 6 (B97): rodada encerrada é lida uma vez, não fica em escuta
+  // (MonitorService.streamSincronizadosAteEncerrar).
   final List<StreamSubscription<Map<String, int>>> _escutaSinc = [];
 
   // Pacote 1: o que os coletores informaram (pendências de envio) e os
@@ -213,7 +216,8 @@ class _PainelAnalistaState extends State<PainelAnalista> {
     }, onError: (_) {});
   }
 
-  /// Lançamentos no servidor por pessoa, em tempo real (C1 e C2).
+  /// Lançamentos no servidor por pessoa (C1 e C2). Item 6 (B97): em tempo
+  /// real só enquanto a rodada está aberta; encerrada → uma leitura.
   void _escutarSincronizados() {
     for (final e in _escutaSinc) {
       e.cancel();
@@ -222,7 +226,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
     final id = widget.inventarioId;
     for (final rodada in Rodadas.base) {
       _escutaSinc.add(_monitor
-          .streamSincronizadosPorUsuario(id, rodada)
+          .streamSincronizadosAteEncerrar(id, rodada)
           .listen((porUid) {
         if (!mounted || id != widget.inventarioId) return;
         setState(() => _sinc = {..._sinc, rodada: porUid});
@@ -253,8 +257,13 @@ class _PainelAnalistaState extends State<PainelAnalista> {
           {bool perigo = false}) =>
       confirmarAcao(context, titulo, texto, botao, perigo: perigo);
 
-  Future<void> _rodar(Future<void> Function() acao) async {
+  /// Item 7: [nome] fica marcado no log enquanto a ação roda. Se o app
+  /// fechar no meio (queda nativa, sem erro no Dart), a próxima abertura
+  /// registra qual ação estava em curso.
+  Future<void> _rodar(Future<void> Function() acao,
+      {String nome = 'ação do painel'}) async {
     setState(() => _ocupado = true);
+    RegistroErros.marcarAcao('$nome · inventário ${widget.inventarioId}');
     try {
       await acao();
     } on OperacaoNaoPermitidaException catch (e) {
@@ -262,6 +271,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
     } catch (e) {
       _snack('Erro: $e', erro: true);
     } finally {
+      RegistroErros.concluirAcao();
       if (mounted) setState(() => _ocupado = false);
     }
   }
@@ -280,7 +290,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         'Encerrar $rot')) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'encerrar rodada', () async {
       try {
         await _monitor.encerrarRodada(inv.id, rodada);
         _snack('$rot encerrada.');
@@ -366,7 +376,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
             'Refazer')) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'gerar comparativo', () async {
       final r = await _comparativo.gerarComparativo(inv.id, refazer: refazer);
       final tipo = _tipo(inv);
       final paraC3 =
@@ -380,7 +390,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
   void _abrirRelatorio(Inventario inv) => widget.onAbrirRelatorio?.call(inv);
 
   Future<void> _exportar(Inventario inv) async {
-    await _rodar(() async {
+    await _rodar(nome: 'exportar relatório', () async {
       final caminho = await exportarRelatorioXlsx(inv.id);
       if (caminho != null) _snack('Planilha salva: $caminho');
     });
@@ -398,24 +408,24 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         'Chamar participantes')) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'chamar participantes da C3', () async {
       await _c3.chamarParticipantes(inv.id, natureza);
       _snack('C3 aberta: os operadores tocam em "Estou pronto para a C3".');
     });
   }
 
   Future<void> _iniciarC3(Inventario inv, int prontos, int tarefas) async {
-    final base = prontos == 0 ? 0 : tarefas ~/ prontos;
-    final resto = prontos == 0 ? 0 : tarefas % prontos;
     if (!await _confirmar(
         'Iniciar a C3?',
-        '$tarefas item(ns) para $prontos participante(s): '
-            '${resto > 0 ? '$resto com ${base + 1} e ${prontos - resto} com $base' : 'cada um com $base'}.\n\n'
+        '$tarefas item(ns) para $prontos participante(s), divididos POR '
+            'LOCAL: cada local fica com uma pessoa (local grande é dividido '
+            'por produto). As quantidades por pessoa variam conforme o '
+            'tamanho dos locais.\n\n'
             'A lista de participantes fica congelada.',
         'Iniciar C3')) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'iniciar C3', () async {
       await _c3.iniciarC3(inv.id);
       _snack('C3 iniciada. Os itens já estão nos aparelhos dos participantes.');
     });
@@ -432,7 +442,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         perigo: true)) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'redistribuir C3', () async {
       await _c3.redistribuirPendentes(inv.id);
       _snack('Pendentes redistribuídos.');
     });
@@ -444,7 +454,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         'Encerrar C3')) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'encerrar C3', () async {
       await _c3.encerrarC3(inv.id);
       _snack('C3 encerrada. Resultado final pronto.');
     });
@@ -735,7 +745,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
   }
 
   Future<void> _exportarRecuperacao(Inventario inv) async {
-    await _rodar(() async {
+    await _rodar(nome: 'exportar Recuperação', () async {
       final aba = AbaRelatorio('Recuperação', [
         [
           'Operação', 'Operador', 'Rodada', 'Código', 'Descrição', 'Lote',
@@ -927,7 +937,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
             const Text('Gravando a distribuição. Se o app fechou ou a rede '
                 'caiu no meio, retome:'),
             OutlinedButton(
-              onPressed: () => _rodar(() async {
+              onPressed: () => _rodar(nome: 'retomar distribuição da C3', () async {
                 await _c3.retomarDistribuicao(inv.id);
                 _snack('Distribuição concluída.');
               }),
@@ -1008,7 +1018,7 @@ class _PainelAnalistaState extends State<PainelAnalista> {
         'Encerrar inventário')) {
       return;
     }
-    await _rodar(() async {
+    await _rodar(nome: 'encerrar inventário', () async {
       try {
         await InventarioService().encerrarInventarioCompleto(inv.id);
         _snack('Inventário ${inv.numeroFormatado} encerrado.');

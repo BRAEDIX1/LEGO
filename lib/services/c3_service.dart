@@ -142,6 +142,12 @@ class C3Service {
       await b.commit();
     }
     // 2) Abre a C3 com a natureza escolhida.
+    // Item 7: confere o estado ANTES da transação (ver _statusC3Servidor).
+    final antes = await _statusC3Servidor(inventarioId);
+    if (antes != StatusRodada.pendente) {
+      throw OperacaoNaoPermitidaException('Chamar participantes', inventarioId,
+          'a C3 não está pendente (${StatusRodada.rotulo(antes)})');
+    }
     await _fs.runTransaction<void>((tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
@@ -191,6 +197,11 @@ class C3Service {
           'Iniciar C3', inventarioId, 'nenhum participante confirmou');
     }
     final uids = prontos.map((p) => p.uid).toList();
+    if (await _statusC3Servidor(inventarioId) !=
+        StatusRodada.aguardandoParticipantes) {
+      throw OperacaoNaoPermitidaException('Iniciar C3', inventarioId,
+          'a C3 não está aguardando participantes');
+    }
     await _fs.runTransaction<void>((tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
@@ -227,6 +238,10 @@ class C3Service {
       throw OperacaoNaoPermitidaException(
           'Redistribuir', inventarioId, 'nenhum participante confirmado');
     }
+    if (await _statusC3Servidor(inventarioId) != StatusRodada.emAndamento) {
+      throw OperacaoNaoPermitidaException(
+          'Redistribuir', inventarioId, 'a C3 não está em andamento');
+    }
     await _fs.runTransaction<void>((tx) async {
       final snap = await tx.get(_inv(inventarioId));
       final inv = Inventario.fromFirestore(snap);
@@ -254,6 +269,21 @@ class C3Service {
   /// inventário ficou em `distribuindo`/`redistribuindo`.
   Future<Map<String, int>> retomarDistribuicao(String inventarioId) async =>
       _concluirDistribuicao(inventarioId, await _prontosServidor(inventarioId));
+
+  /// Item 7: estado da C3 lido do SERVIDOR antes de abrir a transação. No
+  /// Windows, uma transação que falha pode derrubar o app (biblioteca nativa
+  /// do Firestore); conferindo antes, os casos previsíveis (clique duplo,
+  /// tela desatualizada) viram mensagem. A conferência dentro da transação
+  /// continua, para a corrida entre dois analistas.
+  Future<String?> _statusC3Servidor(String inventarioId) async {
+    final s = await _inv(inventarioId)
+        .get(const GetOptions(source: Source.server));
+    if (!s.exists) {
+      throw OperacaoNaoPermitidaException(
+          'C3', inventarioId, 'inventário não encontrado');
+    }
+    return Inventario.fromFirestore(s).statusRodada(_c3);
+  }
 
   static int _versao(DocumentSnapshot<Map<String, dynamic>> snap) {
     final v = ((snap.data()?['contagens'] as Map?)?[_c3] as Map?)?['c3_versao'];
@@ -288,10 +318,11 @@ class C3Service {
         .toList();
     final pendentes = todas
         .where((l) => l.c3Status != StatusTarefaC3.sincronizada)
-        .map((l) => l.docId)
         .toList();
 
-    final dist = distribuirTarefas(pendentes, nomes.keys.toList());
+    // Item 2 (03/11) — C3-D: por local, com peso de esforço (sem sorteio).
+    final dist = distribuirPorLocal(
+        pendentes.map(itemDistribuicaoDe).toList(), nomes.keys.toList());
     final ops = <void Function(WriteBatch)>[];
     dist.forEach((resp, ids) {
       for (final id in ids) {
@@ -344,6 +375,10 @@ class C3Service {
     if (faltam > 0) {
       throw OperacaoNaoPermitidaException('Encerrar C3', inventarioId,
           '$faltam tarefa(s) ainda não sincronizada(s)');
+    }
+    if (await _statusC3Servidor(inventarioId) != StatusRodada.emAndamento) {
+      throw OperacaoNaoPermitidaException(
+          'Encerrar C3', inventarioId, 'a C3 não está em andamento');
     }
     await _fs.runTransaction<void>((tx) async {
       final snap = await tx.get(_inv(inventarioId));
@@ -557,7 +592,7 @@ class C3Service {
         doServidor: doServidor,
         sincronizadasNoServidor: sincronizadas,
         locais: invLocal == inventarioId ? locais : const [],
-      )..sort((a, b) => a.codigo.compareTo(b.codigo));
+      )..sort(ordemDeExecucaoC3); // item 2: local → produto → lote
       await _salvarLocalSemFila(inventarioId, numero, mescladas);
       return mescladas;
     });

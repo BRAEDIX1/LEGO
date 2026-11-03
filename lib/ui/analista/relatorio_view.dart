@@ -14,14 +14,15 @@
 
 import 'dart:async';
 
-import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/material.dart';
 
 import 'package:lego/models/inventario.dart';
 import 'package:lego/services/comparativo.dart';
 import 'package:lego/services/comparativo_rodadas_service.dart';
+import 'package:lego/services/registro_erros.dart';
 import 'package:lego/services/relatorio_inventario.dart';
 import 'package:lego/ui/analista/painel_analista.dart' show avisar, exportarRelatorioXlsx;
+import 'package:lego/ui/analista/tabela_virtual.dart';
 
 class RelatorioInventarioView extends StatefulWidget {
   final String inventarioId;
@@ -104,6 +105,7 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
       _carregando = true;
       _erro = null;
     });
+    final relogio = Stopwatch()..start();
     try {
       final id = widget.inventarioId;
       if (tudo || _c1 == null || _c2 == null) {
@@ -113,6 +115,7 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
             doCache: doCache);
       }
       final linhas = await _cmp.lerComparativo(id);
+      final msLeitura = relogio.elapsedMilliseconds;
       final abas = montarRelatorio(
         numero: widget.numeroFormatado,
         tipo: widget.tipo, // igual ao .xlsx
@@ -123,6 +126,15 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
         resumoC2: _c2!.$2,
         comparativo: linhas,
       );
+      // Item 6: medição de desempenho no log do Desktop (no celular, o log
+      // não está ligado e isto não faz nada).
+      unawaited(RegistroErros.registrarTexto(
+          'desempenho',
+          'relatório ${widget.numeroFormatado}: leitura $msLeitura ms '
+              '(${tudo ? (doCache ? 'cache' : 'servidor') : 'só comparativo'}), '
+              'montagem ${relogio.elapsedMilliseconds - msLeitura} ms · '
+              'C1 ${_c1!.$1.length} + C2 ${_c2!.$1.length} lançamentos · '
+              '${linhas.length} linhas do comparativo'));
       if (!mounted || ger != _geracao) return;
       setState(() {
         _abas = abas;
@@ -253,35 +265,11 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
         Expanded(
           child: a.dados.isEmpty
               ? const Center(child: Text('Nenhuma linha.'))
-              : _TabelaRolavel(
+              : TabelaVirtual(
                   key: ValueKey('tabela/${a.nome}'),
-                  tabela: DataTable(
-                      headingRowHeight: 36,
-                      dataRowMinHeight: 30,
-                      dataRowMaxHeight: 44,
-                      columnSpacing: 16,
-                      headingTextStyle: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 12,
-                          color: Colors.black87),
-                      columns: [
-                        for (final c in a.cabecalho)
-                          DataColumn(label: Text('${c ?? ''}')),
-                      ],
-                      rows: [
-                        for (final l in a.dados)
-                          DataRow(
-                            color: WidgetStateProperty.resolveWith(
-                                (_) => _corLinha(a, l)),
-                            cells: [
-                              for (var i = 0; i < a.cabecalho.length; i++)
-                                DataCell(Text(
-                                    _fmt(i < l.length ? l[i] : null),
-                                    style: const TextStyle(fontSize: 12))),
-                            ],
-                          ),
-                      ],
-                    ),
+                  aba: a,
+                  formatar: _fmt,
+                  corDaLinha: (l) => _corLinha(a, l),
                 ),
         ),
       ],
@@ -331,68 +319,6 @@ class _RelatorioInventarioViewState extends State<RelatorioInventarioView> {
           RegExp(r'\.$'), '').replaceAll('.', ',');
     }
     return v.toString();
-  }
-}
-
-/// Tabela que preenche a largura da área e tem as duas barras de rolagem
-/// sempre visíveis (no desktop o mouse
-/// não arrasta lista por padrão). Horizontal por fora: a barra fica no pé da
-/// área visível, não no fim das linhas. Arrastar com o mouse também rola.
-class _TabelaRolavel extends StatefulWidget {
-  final Widget tabela;
-  const _TabelaRolavel({super.key, required this.tabela});
-
-  @override
-  State<_TabelaRolavel> createState() => _TabelaRolavelState();
-}
-
-class _TabelaRolavelState extends State<_TabelaRolavel> {
-  final _h = ScrollController();
-  final _v = ScrollController();
-
-  @override
-  void dispose() {
-    _h.dispose();
-    _v.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return ScrollConfiguration(
-      behavior: ScrollConfiguration.of(context).copyWith(dragDevices: {
-        PointerDeviceKind.touch,
-        PointerDeviceKind.mouse,
-        PointerDeviceKind.trackpad,
-        PointerDeviceKind.stylus,
-      }),
-      child: LayoutBuilder(
-        builder: (context, c) => Scrollbar(
-          controller: _h,
-          thumbVisibility: true,
-          trackVisibility: true,
-          child: SingleChildScrollView(
-            controller: _h,
-            scrollDirection: Axis.horizontal,
-            padding: const EdgeInsets.only(bottom: 14), // espaço da barra
-            child: Scrollbar(
-              controller: _v,
-              thumbVisibility: true,
-              child: SingleChildScrollView(
-                controller: _v,
-                padding: const EdgeInsets.only(right: 14),
-                // Tabela estreita: colunas esticam até a largura da área.
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(
-                      minWidth: c.maxWidth > 14 ? c.maxWidth - 14 : 0.0),
-                  child: widget.tabela,
-                ),
-              ),
-            ),
-          ),
-        ),
-      ),
-    );
   }
 }
 
@@ -470,31 +396,10 @@ class AbasRelatorioView extends StatelessWidget {
         Expanded(
           child: a.dados.isEmpty
               ? const Center(child: Text('Nenhuma linha.'))
-              : _TabelaRolavel(
+              : TabelaVirtual(
                   key: ValueKey('tabela/${a.nome}'),
-                  tabela: DataTable(
-                    headingRowHeight: 36,
-                    dataRowMinHeight: 30,
-                    dataRowMaxHeight: 44,
-                    columnSpacing: 16,
-                    headingTextStyle: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 12,
-                        color: Colors.black87),
-                    columns: [
-                      for (final c in a.cabecalho)
-                        DataColumn(label: Text('${c ?? ''}')),
-                    ],
-                    rows: [
-                      for (final l in a.dados)
-                        DataRow(cells: [
-                          for (var i = 0; i < a.cabecalho.length; i++)
-                            DataCell(Text(
-                                formatarCelula(i < l.length ? l[i] : null),
-                                style: const TextStyle(fontSize: 12))),
-                        ]),
-                    ],
-                  ),
+                  aba: a,
+                  formatar: formatarCelula,
                 ),
         ),
       ],
