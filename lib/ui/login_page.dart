@@ -138,26 +138,23 @@ class _LoginPageState extends State<LoginPage> {
 
         await _navegarAposLogin(needsSync);
       } else {
-        final userCredential = await _authService.signInWithEmailAndPassword(
+        await _authService.signInWithEmailAndPassword(
             email: email, password: pass);
         if (!mounted) return;
-        final verified = userCredential.user?.emailVerified ?? false;
-        if (!verified) {
-          await userCredential.user?.sendEmailVerification();
-          if (!mounted) return;
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-                content: Text('E-mail não verificado. Reenviamos o link.')),
-          );
-          await _authService.signOut();
-        } else {
-          final needsSync = await _checkNeedsSync();
-          if (!mounted) return;
+        // 03/11 (decisão do Djalma, opção B): o login NÃO exige mais a
+        // confirmação de e-mail. Antes, só o login com senha conferia; o
+        // cadastro e a abertura do app não conferiam, e o reenvio do link a
+        // cada tentativa acabava bloqueado pelo Firebase (excesso de
+        // pedidos) ANTES de desconectar — o usuário ficava conectado e
+        // "entrava depois de insistir". O e-mail do link também não chegava
+        // a muitos usuários (spam / filtro corporativo). O controle de
+        // acesso de analista continua em sistema/app_config.
+        final needsSync = await _checkNeedsSync();
+        if (!mounted) return;
 
-          _iniciarListenerVersao(); // ✅ Inicia listener após login
+        _iniciarListenerVersao(); // ✅ Inicia listener após login
 
-          await _navegarAposLogin(needsSync);
-        }
+        await _navegarAposLogin(needsSync);
       }
     } on FirebaseAuthException catch (e) {
       if (!mounted) return;
@@ -185,6 +182,11 @@ class _LoginPageState extends State<LoginPage> {
         return 'Usuário não encontrado';
       case 'wrong-password':
         return 'Senha incorreta';
+      // Firebase atual: com a proteção contra enumeração de e-mails, senha
+      // errada e usuário inexistente voltam com o MESMO código.
+      case 'invalid-credential':
+      case 'INVALID_LOGIN_CREDENTIALS':
+        return 'E-mail ou senha incorretos';
       case 'email-already-in-use':
         return 'Já existe uma conta com este e-mail';
       case 'nickname-already-in-use':

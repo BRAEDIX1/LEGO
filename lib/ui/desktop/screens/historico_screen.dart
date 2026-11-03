@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
+import 'package:lego/ui/desktop/screens/relatorio_do_inventario_screen.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/services/inventario_service.dart';
 import 'package:lego/ui/desktop/screens/detalhe_inventario_screen.dart';
-import 'package:lego/ui/desktop/screens/relatorio_screen.dart';
 
 /// Tela de histórico de inventários
 class HistoricoScreen extends StatefulWidget {
@@ -638,7 +638,7 @@ class _HistoricoScreenState extends State<HistoricoScreen> {
       case 'relatorio':
         Navigator.of(context).push(
           MaterialPageRoute(
-            builder: (_) => RelatorioScreen(inventarioId: inv.id),
+            builder: (_) => RelatorioDoInventarioScreen(inventarioId: inv.id),
           ),
         );
         break;

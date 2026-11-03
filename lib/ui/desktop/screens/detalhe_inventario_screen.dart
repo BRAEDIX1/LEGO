@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 
+import 'package:lego/ui/desktop/screens/relatorio_do_inventario_screen.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/models/participante.dart';
 import 'package:lego/services/relatorio_service.dart';
-import 'package:lego/ui/desktop/screens/relatorio_screen.dart';
 
 /// Tela de detalhes de um inventário específico
 class DetalheInventarioScreen extends StatefulWidget {
@@ -978,7 +978,7 @@ class _DetalheInventarioScreenState extends State<DetalheInventarioScreen>
   void _abrirRelatorio(Inventario inventario) {
     Navigator.of(context).push(
       MaterialPageRoute(
-        builder: (_) => RelatorioScreen(inventarioId: inventario.id),
+        builder: (_) => RelatorioDoInventarioScreen(inventarioId: inventario.id),
       ),
     );
   }

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:intl/intl.dart';
 
+import 'package:lego/ui/desktop/screens/relatorio_do_inventario_screen.dart';
 import 'package:lego/models/inventario.dart';
 import 'package:lego/services/inventario_service.dart';
 
@@ -11,7 +12,6 @@ import 'package:lego/services/inventario_service.dart';
 import 'package:lego/ui/desktop/screens/criar_inventario_screen.dart';      // Fase 1
 import 'package:lego/ui/desktop/screens/controle_contagem_screen.dart';     // Fase 2
 import 'package:lego/ui/desktop/screens/participantes_screen.dart';         // Fase 2
-import 'package:lego/ui/desktop/screens/relatorio_screen.dart';             // Fase 3
 import 'package:lego/ui/desktop/screens/historico_screen.dart';             // Fase 4
 import 'package:lego/ui/desktop/screens/comparativo_inventarios_screen.dart'; // Fase 6
 import 'package:lego/ui/desktop/screens/inventario_completo_screen.dart';   // Entrega 3 (fluxo 2)
@@ -340,7 +340,7 @@ class _DashboardDesktopScreenState extends State<DashboardDesktopScreen> {
       case 4:
         return ParticipantesScreen(inventarioId: _inventarioAtivo!.id);
       case 5:
-        return RelatorioScreen(inventarioId: _inventarioAtivo!.id);
+        return RelatorioDoInventarioScreen(inventarioId: _inventarioAtivo!.id);
       case 6:
         return const HistoricoScreen();
       case 7:
