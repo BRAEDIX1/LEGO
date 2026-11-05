@@ -2,7 +2,7 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:equatable/equatable.dart';
 
-import 'package:lego/models/inventario.dart' show Rodadas;
+import 'package:lego/models/inventario.dart' show Rodadas, StatusRodada;
 
 /// Status individual do participante em uma rodada (`status_cN`).
 /// Fluxo 2 grava apenas [emAndamento] e [finalizado].
@@ -221,6 +221,50 @@ class Participante extends Equatable {
     final s = statusDaRodada(rodadaId);
     return s == StatusParticipante.finalizado ||
         s == StatusParticipante.finalizadaLegado;
+  }
+
+  /// Rodadas-base (C1/C2) em que o usuário já entrou neste inventário.
+  Set<String> get rodadasBaseQueParticipa => rodadasBaseDoDocumento({
+        'rodada_base': rodadaBase,
+        'status_c1': statusC1,
+        'status_c2': statusC2,
+      });
+
+  /// Mesma leitura de [rodadasBaseQueParticipa], direto do documento
+  /// `participantes/{uid}` (usada dentro da operação atômica).
+  static Set<String> rodadasBaseDoDocumento(Map<String, dynamic>? dados) {
+    if (dados == null) return <String>{};
+    final base = dados['rodada_base'] as String?;
+    return {
+      if (Rodadas.isBase(base)) base!,
+      for (final r in Rodadas.base)
+        if (dados['status_${Rodadas.sufixo(r)}'] != null &&
+            dados['status_${Rodadas.sufixo(r)}'] !=
+                StatusParticipante.naoParticipou)
+          r,
+    };
+  }
+
+  /// D4 revisto (05/11/2026): a mesma pessoa pode contar C1 e C2, mas nunca
+  /// ao mesmo tempo. Só entra na outra rodada-base depois que a rodada em que
+  /// já está foi ENCERRADA (status global, pelo analista). Assim a primeira
+  /// contagem está congelada antes de a segunda começar.
+  ///
+  /// Devolve a rodada que impede a entrada em [rodada], ou null se pode
+  /// entrar. [statusGlobal]: status global de uma rodada no inventário.
+  static String? rodadaQueImpedeEntrada({
+    required String rodada,
+    required Set<String> participaEm,
+    required String? Function(String rodada) statusGlobal,
+  }) {
+    for (final outra in Rodadas.base) {
+      if (outra == rodada) continue;
+      if (participaEm.contains(outra) &&
+          statusGlobal(outra) != StatusRodada.encerrada) {
+        return outra;
+      }
+    }
+    return null;
   }
 
   /// Regra individual de lançamento: participação em andamento na rodada.

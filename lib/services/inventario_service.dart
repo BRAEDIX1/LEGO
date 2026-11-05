@@ -42,15 +42,17 @@ class EncerramentoBloqueadoException implements Exception {
   String toString() => 'Inventário não pode ser encerrado:\n- ${pendencias.join('\n- ')}';
 }
 
-/// D4: o usuário já tem outra rodada base neste inventário.
+/// D4 (revisto em 05/11/2026): o usuário está em outra rodada-base deste
+/// inventário que ainda NÃO foi encerrada.
 class RodadaBaseConflitoException implements Exception {
   final String rodadaBaseAtual;
   final String rodadaPedida;
   RodadaBaseConflitoException(this.rodadaBaseAtual, this.rodadaPedida);
   @override
   String toString() =>
-      'Você já participa da ${Rodadas.rotulo(rodadaBaseAtual)} neste inventário '
-      'e não pode entrar na ${Rodadas.rotulo(rodadaPedida)}.';
+      'Você participa da ${Rodadas.rotulo(rodadaBaseAtual)} deste inventário. '
+      'Só poderá entrar na ${Rodadas.rotulo(rodadaPedida)} depois que a '
+      '${Rodadas.rotulo(rodadaBaseAtual)} for encerrada.';
 }
 
 /// Compatibilidade (aceite do plano §5): finalizar exige ao menos 1
@@ -509,7 +511,9 @@ class InventarioService {
   /// Em transação:
   /// - o inventário precisa ser do fluxo 2, estar ativo e a rodada não pode
   ///   estar encerrada;
-  /// - `rodada_base` é gravada na primeira entrada e nunca muda (D4);
+  /// - `rodada_base` é gravada na primeira entrada e nunca muda;
+  /// - D4 revisto (05/11): entrar na outra rodada-base só depois que a
+  ///   rodada em que o usuário já está foi encerrada;
   /// - participação já finalizada NÃO é reaberta: a sessão volta em modo
   ///   consulta;
   /// - a primeira entrada na rodada a tira de `disponivel` para `em_andamento`.
@@ -557,11 +561,17 @@ class InventarioService {
       final partSnap = await tx.get(partRef);
       final dados = partSnap.data();
       final rodadaBase = dados?['rodada_base'] as String?;
-      if (rodadaBase != null && rodadaBase != rodada) {
-        throw RodadaBaseConflitoException(rodadaBase, rodada);
-      }
+      final participaEm = Participante.rodadasBaseDoDocumento(dados);
+      final impede = Participante.rodadaQueImpedeEntrada(
+        rodada: rodada,
+        participaEm: participaEm,
+        statusGlobal: inv.statusRodada,
+      );
+      if (impede != null) throw RodadaBaseConflitoException(impede, rodada);
       final statusAtual = dados?['status_$sufixo'] as String?;
       final primeira = statusAtual == null;
+      // Já contou a outra rodada-base (encerrada): fica na trilha de auditoria.
+      final anteriores = participaEm.where((r) => r != rodada).toList();
 
       // ---------- ESCRITAS ----------
       final agora = FieldValue.serverTimestamp();
@@ -598,6 +608,9 @@ class InventarioService {
           tipo: TipoEvento.participanteEntrou,
           uid: user.uid,
           rodada: rodada,
+          dados: anteriores.isEmpty
+              ? null
+              : {'ja_contou': anteriores, 'apos_encerramento': true},
         );
       }
 

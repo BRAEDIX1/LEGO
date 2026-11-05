@@ -224,19 +224,23 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
         ? 'no Inventário ${_ativo!.numeroFormatado}'
         : 'num novo Inventário Completo de '
             '${SessaoContagem.rotuloNatureza(natureza)}';
-    final jaEstou = _eu?.rodadaBase == rodada;
+    final participaEm = _eu?.rodadasBaseQueParticipa ?? <String>{};
+    final jaEstou = participaEm.contains(rodada);
+    final outra =
+        Rodadas.rotulo(rodada == Rodadas.c1 ? Rodadas.c2 : Rodadas.c1);
+    // D4 revisto (05/11): a outra rodada só depois que esta for encerrada.
+    final aviso = participaEm.isEmpty
+        ? 'Você só poderá contar a $outra deste inventário depois que a '
+            '$rotulo for encerrada.'
+        : 'Você já contou a $outra (encerrada). As duas contagens ficam '
+            'registradas com o seu nome.';
 
     if (!jaEstou) {
       final ok = await showDialog<bool>(
         context: context,
         builder: (ctx) => AlertDialog(
           title: Text('Entrar na $rotulo?'),
-          content: Text(
-            'Você vai contar a $rotulo $alvo.\n\n'
-            'Depois de entrar, você não poderá contar a '
-            '${Rodadas.rotulo(rodada == Rodadas.c1 ? Rodadas.c2 : Rodadas.c1)} '
-            'deste inventário.',
-          ),
+          content: Text('Você vai contar a $rotulo $alvo.\n\n$aviso'),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
@@ -422,10 +426,11 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
                   style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ],
-              if (_eu?.rodadaBase != null) ...[
+              if (_eu?.rodadasBaseQueParticipa.isNotEmpty ?? false) ...[
                 const SizedBox(height: 4),
                 Text(
-                  'Você participa da ${Rodadas.rotulo(_eu!.rodadaBase!)} '
+                  'Você participa da '
+                  '${[for (final r in Rodadas.base) if (_eu!.rodadasBaseQueParticipa.contains(r)) Rodadas.rotulo(r)].join(' e da ')} '
                   'deste inventário.',
                   style: TextStyle(color: Colors.grey[700], fontSize: 13),
                 ),
@@ -679,6 +684,18 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     );
   }
 
+  /// Rodada que impede o usuário de entrar em [rodada] (null = pode).
+  String? _conflito(String rodada) {
+    final eu = _eu;
+    final inv = _ativo;
+    if (eu == null || inv == null) return null;
+    return Participante.rodadaQueImpedeEntrada(
+      rodada: rodada,
+      participaEm: eu.rodadasBaseQueParticipa,
+      statusGlobal: inv.statusRodada,
+    );
+  }
+
   Widget _botaoRodada(String rodada) {
     final rotulo = Rodadas.rotulo(rodada);
     String? bloqueio;
@@ -687,8 +704,10 @@ class _EscolhaContagemScreenState extends State<EscolhaContagemScreen> {
     final status = _ativo?.statusRodada(rodada);
     if (status == StatusRodada.encerrada) {
       bloqueio = '$rotulo encerrada';
-    } else if (_eu?.rodadaBase != null && _eu!.rodadaBase != rodada) {
-      bloqueio = 'Você está na ${Rodadas.rotulo(_eu!.rodadaBase!)}'; // D4
+    } else if (_conflito(rodada) case final impede?) {
+      // D4 revisto (05/11): libera quando a outra rodada for encerrada.
+      bloqueio = 'Você está na ${Rodadas.rotulo(impede)}. '
+          'Libera quando a ${Rodadas.rotulo(impede)} for encerrada.';
     } else if (_eu?.estaFinalizadoEm(rodada) ?? false) {
       legenda = '$rotulo (finalizada: só consulta)';
     }

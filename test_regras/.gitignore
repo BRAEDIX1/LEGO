@@ -1,0 +1,5 @@
+node_modules/
+*.log
+# cópia de ../firestore.rules feita pelo pretest (o emulador não aceita
+# arquivo fora desta pasta); a fonte é sempre ../firestore.rules
+firestore.rules

@@ -149,4 +149,117 @@ void main() {
       expect(m['iniciou_c1_em'], isNotNull);
     });
   });
+
+  // D4 revisto (05/11/2026): C1 e C2 pela mesma pessoa, nunca ao mesmo tempo.
+  group('D4 revisto: entrada na outra rodada-base', () {
+    String? Function(String) status(String? c1, String? c2) =>
+        (r) => r == Rodadas.c1 ? c1 : (r == Rodadas.c2 ? c2 : null);
+
+    test('nunca participou: entra em qualquer uma', () {
+      for (final r in Rodadas.base) {
+        expect(
+            Participante.rodadaQueImpedeEntrada(
+                rodada: r,
+                participaEm: {},
+                statusGlobal: status(StatusRodada.emAndamento,
+                    StatusRodada.disponivel)),
+            isNull);
+      }
+    });
+
+    test('na C1 ainda aberta: C2 bloqueada pela C1', () {
+      for (final st in [StatusRodada.emAndamento, StatusRodada.disponivel]) {
+        expect(
+            Participante.rodadaQueImpedeEntrada(
+                rodada: Rodadas.c2,
+                participaEm: {Rodadas.c1},
+                statusGlobal: status(st, StatusRodada.disponivel)),
+            Rodadas.c1);
+      }
+    });
+
+    test('finalizar a PRÓPRIA participação não basta: precisa da C1 encerrada',
+        () {
+      final p = Participante(
+        uid: 'u',
+        displayName: 'U',
+        rodadaBase: Rodadas.c1,
+        statusC1: StatusParticipante.finalizado,
+      );
+      expect(
+          Participante.rodadaQueImpedeEntrada(
+              rodada: Rodadas.c2,
+              participaEm: p.rodadasBaseQueParticipa,
+              statusGlobal:
+                  status(StatusRodada.emAndamento, StatusRodada.emAndamento)),
+          Rodadas.c1);
+    });
+
+    test('C1 encerrada: entra na C2', () {
+      expect(
+          Participante.rodadaQueImpedeEntrada(
+              rodada: Rodadas.c2,
+              participaEm: {Rodadas.c1},
+              statusGlobal:
+                  status(StatusRodada.encerrada, StatusRodada.disponivel)),
+          isNull);
+    });
+
+    test('simétrico: C2 encerrada libera a C1', () {
+      expect(
+          Participante.rodadaQueImpedeEntrada(
+              rodada: Rodadas.c1,
+              participaEm: {Rodadas.c2},
+              statusGlobal:
+                  status(StatusRodada.emAndamento, StatusRodada.encerrada)),
+          isNull);
+      expect(
+          Participante.rodadaQueImpedeEntrada(
+              rodada: Rodadas.c1,
+              participaEm: {Rodadas.c2},
+              statusGlobal:
+                  status(StatusRodada.emAndamento, StatusRodada.emAndamento)),
+          Rodadas.c2);
+    });
+
+    test('retomar a rodada em que já está nunca é bloqueado', () {
+      expect(
+          Participante.rodadaQueImpedeEntrada(
+              rodada: Rodadas.c1,
+              participaEm: {Rodadas.c1},
+              statusGlobal:
+                  status(StatusRodada.emAndamento, StatusRodada.emAndamento)),
+          isNull);
+      // Nas duas (C1 encerrada, C2 em andamento): volta para a C2.
+      expect(
+          Participante.rodadaQueImpedeEntrada(
+              rodada: Rodadas.c2,
+              participaEm: {Rodadas.c1, Rodadas.c2},
+              statusGlobal:
+                  status(StatusRodada.encerrada, StatusRodada.emAndamento)),
+          isNull);
+    });
+
+    test('documento do participante: rodada_base e status_cN contam', () {
+      expect(Participante.rodadasBaseDoDocumento(null), isEmpty);
+      expect(
+          Participante.rodadasBaseDoDocumento(
+              {'rodada_base': Rodadas.c1, 'status_c1': 'finalizado'}),
+          {Rodadas.c1});
+      expect(
+          Participante.rodadasBaseDoDocumento({
+            'rodada_base': Rodadas.c1,
+            'status_c1': 'finalizado',
+            'status_c2': 'em_andamento',
+          }),
+          {Rodadas.c1, Rodadas.c2});
+      // C3 não é rodada-base; 'nao_participou' (fluxo 1) não conta.
+      expect(
+          Participante.rodadasBaseDoDocumento({
+            'status_c2': StatusParticipante.naoParticipou,
+            'status_c3': 'em_andamento',
+          }),
+          isEmpty);
+    });
+  });
 }

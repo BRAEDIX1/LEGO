@@ -34,6 +34,10 @@ service cloud.firestore {
              .difference(velho.get('usuarios', []).toSet())
              .hasOnly([request.auth.uid])
         && (novo.get('status', null) == velho.get('status', null) || transicao)
+        // D4 revisto (05/11): quem ENTRA (uid novo na lista) só entra em
+        // rodada aberta. Retomada (lista igual) continua livre.
+        && (novo.get('usuarios', []).toSet() == velho.get('usuarios', []).toSet()
+            || velho.get('status', null) in ['disponivel', 'em_andamento'])
         // B84: iniciada_em só na abertura real da rodada.
         && (!mudou.hasAny(['iniciada_em']) || transicao);
     }
@@ -45,9 +49,27 @@ service cloud.firestore {
              .affectedKeys().hasOnly(['contagem_1', 'contagem_2'])
         && rodadaDoOperadorOk('contagem_1')
         && rodadaDoOperadorOk('contagem_2')
-        // B84 (D4): o mesmo uid nunca nas duas rodadas-base.
-        && !(request.auth.uid in c.get('contagem_1', {}).get('usuarios', [])
-             && request.auth.uid in c.get('contagem_2', {}).get('usuarios', []));
+        && semRodadasSimultaneas();
+    }
+    // B84 (D4, revisto em 05/11/2026): o mesmo uid pode estar nas duas
+    // rodadas-base, mas nunca ao mesmo tempo. Só entra na segunda se a
+    // primeira JÁ estava encerrada, e nunca entra numa rodada encerrada.
+    function semRodadasSimultaneas() {
+      let u = request.auth.uid;
+      let novo = request.resource.data.contagens;
+      let velho = resource.data.contagens;
+      let estavaC1 = u in velho.get('contagem_1', {}).get('usuarios', []);
+      let estavaC2 = u in velho.get('contagem_2', {}).get('usuarios', []);
+      let c1Encerrada = velho.get('contagem_1', {}).get('status', null) == 'encerrada';
+      let c2Encerrada = velho.get('contagem_2', {}).get('status', null) == 'encerrada';
+      return !(u in novo.get('contagem_1', {}).get('usuarios', [])
+               && u in novo.get('contagem_2', {}).get('usuarios', []))
+        // já estava nas duas (retomada): nada novo
+        || (estavaC1 && estavaC2)
+        // C1 encerrada → entra na C2 (aberta)
+        || (estavaC1 && c1Encerrada && !estavaC2 && !c2Encerrada)
+        // C2 encerrada → entra na C1 (aberta)
+        || (estavaC2 && c2Encerrada && !estavaC1 && !c1Encerrada);
     }
     // Operador sincronizando o resultado de UMA tarefa da C3 que é dele,
     // e só com a C3 em andamento (B83: C3 encerrada = congelada).
@@ -90,9 +112,16 @@ service cloud.firestore {
     function participacaoAberta(invId, rodada) {
       let p = /databases/$(database)/documents/inventarios/$(invId)/participantes/$(request.auth.uid);
       let campo = rodada == 'contagem_1' ? 'status_c1' : 'status_c2';
+      let outra = rodada == 'contagem_1' ? 'contagem_2' : 'contagem_1';
       return exists(p)
-        && get(p).data.get('rodada_base', null) == rodada
-        && get(p).data.get(campo, null) == 'em_andamento';
+        && get(p).data.get(campo, null) == 'em_andamento'
+        && (get(p).data.get('rodada_base', null) == rodada
+            // D4 revisto (05/11): segunda rodada-base, só com a primeira
+            // (rodada_base) já encerrada.
+            || (get(p).data.get('rodada_base', null) == outra
+                && get(/databases/$(database)/documents/inventarios/$(invId))
+                     .data.get('contagens', {}).get(outra, {})
+                     .get('status', null) == 'encerrada'));
     }
     // B84: rodada_base do participante não muda depois de definida.
     function rodadaBaseImutavel() {

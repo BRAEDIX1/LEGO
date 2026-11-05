@@ -1,0 +1,15 @@
+{
+  "name": "lego-teste-regras",
+  "private": true,
+  "description": "Testes das regras reais (firestore.rules) no emulador local. Projeto demo-: nao acessa nenhum Firebase real.",
+  "type": "module",
+  "scripts": {
+    "pretest": "node -e \"require('fs').copyFileSync('../firestore.rules','firestore.rules')\"",
+    "test": "firebase emulators:exec --only firestore --project demo-lego-regras \"node --test regras_d4.test.mjs\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "3.0.4",
+    "firebase": "10.14.1",
+    "firebase-tools": "13.29.1"
+  }
+}
