@@ -10,17 +10,17 @@
       "id": "ENCHIMENTO_OXIGENIO",
       "nome": "ENCHIMENTO_OXIGENIO",
       "x": 0.41993,
-      "y": 0.48715,
+      "y": 0.48626,
       "w": 0.04817,
-      "h": 0.06163
+      "h": 0.06252
     },
     {
       "id": "ENCHIMENTO_AR_MEDICINAL",
       "nome": "ENCHIMENTO_AR_MEDICINAL",
-      "x": 0.40136,
-      "y": 0.48715,
-      "w": 0.01581,
-      "h": 0.06175
+      "x": 0.40079,
+      "y": 0.48605,
+      "w": 0.01638,
+      "h": 0.06285
     },
     {
       "id": "ENCHIMENTO_LIBERATOR",
@@ -33,8 +33,8 @@
     {
       "id": "ENCHIMENTO_ACETILENO",
       "nome": "ENCHIMENTO_ACETILENO",
-      "x": 0.29025,
-      "y": 0.48576,
+      "x": 0.29015,
+      "y": 0.48561,
       "w": 0.10763,
       "h": 0.06264
     },
@@ -50,17 +50,17 @@
       "id": "DESCARTE_ACETILENO",
       "nome": "DESCARTE_ACETILENO",
       "x": 0.31867,
-      "y": 0.58438,
+      "y": 0.58096,
       "w": 0.00973,
-      "h": 0.14759
+      "h": 0.15101
     },
     {
       "id": "PURIFICACAO",
       "nome": "PURIFICACAO",
       "x": 0.29041,
-      "y": 0.58452,
+      "y": 0.58118,
       "w": 0.02503,
-      "h": 0.14505
+      "h": 0.14839
     },
     {
       "id": "CARRETA_ACETILENO",
@@ -74,9 +74,9 @@
       "id": "PALETES_DIVERSOS_3",
       "nome": "PALETES_DIVERSOS_3",
       "x": 0.27075,
-      "y": 0.58127,
+      "y": 0.58075,
       "w": 0.01096,
-      "h": 0.15128
+      "h": 0.1518
     },
     {
       "id": "PALETES_PINTURA",
@@ -90,9 +90,9 @@
       "id": "AREA_PINTURA",
       "nome": "AREA_PINTURA",
       "x": 0.43556,
-      "y": 0.60783,
+      "y": 0.60515,
       "w": 0.02914,
-      "h": 0.00462
+      "h": 0.0073
     },
     {
       "id": "OXIDO_NITROSO",
@@ -100,31 +100,31 @@
       "x": 0.46122,
       "y": 0.5855,
       "w": 0.00722,
-      "h": 0.01347
+      "h": 0.01496
     },
     {
       "id": "TESTE_HIDROSTATICO",
       "nome": "TESTE_HIDROSTATICO",
-      "x": 0.43681,
-      "y": 0.57755,
+      "x": 0.43612,
+      "y": 0.5767,
       "w": 0.01046,
-      "h": 0.02233
+      "h": 0.02313
     },
     {
       "id": "CILINDROS_PINTADOS",
       "nome": "CILINDROS_PINTADOS",
-      "x": 0.43689,
-      "y": 0.5574,
-      "w": 0.02815,
-      "h": 0.01848
+      "x": 0.43613,
+      "y": 0.55188,
+      "w": 0.02924,
+      "h": 0.02165
     },
     {
       "id": "PEF_MEDICINAIS",
       "nome": "PEF_MEDICINAIS",
       "x": 0.47102,
-      "y": 0.50197,
+      "y": 0.49835,
       "w": 0.01619,
-      "h": 0.04927
+      "h": 0.05289
     },
     {
       "id": "MONTAGEM_PALETES_OXIGENIO",
@@ -138,24 +138,24 @@
       "id": "BUFFER_OXIGENIO",
       "nome": "BUFFER_OXIGENIO",
       "x": 0.37238,
-      "y": 0.37224,
+      "y": 0.36805,
       "w": 0.06675,
-      "h": 0.01732
+      "h": 0.02151
     },
     {
       "id": "PORTA_PALETES_MISTURAS",
       "nome": "PORTA_PALETES_MISTURAS",
       "x": 0.19418,
-      "y": 0.46711,
+      "y": 0.46538,
       "w": 0.04652,
-      "h": 0.00577
+      "h": 0.0075
     },
     {
       "id": "AREA_INFLAMAVEIS",
       "nome": "AREA_INFLAMAVEIS",
-      "x": 0.24211,
+      "x": 0.24042,
       "y": 0.47656,
-      "w": 0.00349,
+      "w": 0.00518,
       "h": 0.0716
     },
     {
@@ -163,7 +163,7 @@
       "nome": "PALETES_DIVERSOS_2",
       "x": 0.24734,
       "y": 0.51082,
-      "w": 0.00473,
+      "w": 0.007,
       "h": 0.09008
     },
     {
@@ -209,42 +209,34 @@
     {
       "id": "ENCHIMENTO_NITROGENIO",
       "nome": "ENCHIMENTO_NITROGENIO",
-      "x": 0.16046,
+      "x": 0.15554,
       "y": 0.59506,
-      "w": 0.01046,
+      "w": 0.01581,
       "h": 0.05543
     },
     {
       "id": "PORTA_PALETES_ULTRASSON",
       "nome": "PORTA_PALETES_ULTRASSON",
-      "x": 0.18607,
+      "x": 0.18202,
       "y": 0.59243,
-      "w": 0.00274,
+      "w": 0.00679,
       "h": 0.02348
     },
     {
       "id": "PALETES_DIVERSOS_4",
       "nome": "PALETES_DIVERSOS_4",
-      "x": 0.18621,
+      "x": 0.18085,
       "y": 0.47253,
-      "w": 0.00274,
+      "w": 0.0081,
       "h": 0.10047
-    },
-    {
-      "id": "PALETES_DIVERSOS_5",
-      "nome": "PALETES_DIVERSOS_5",
-      "x": 0.15543,
-      "y": 0.47618,
-      "w": 0.01594,
-      "h": 0.05235
     },
     {
       "id": "CONDENADOS_REQUALIFICACAO",
       "nome": "CONDENADOS_REQUALIFICACAO",
       "x": 0.15518,
-      "y": 0.53431,
+      "y": 0.446,
       "w": 0.01644,
-      "h": 0.05851
+      "h": 0.14682
     },
     {
       "id": "PALETES_DIVERSOS_1",
@@ -257,7 +249,7 @@
     {
       "id": "CESTAS_E_REVENDA",
       "nome": "CESTAS_E_REVENDA",
-      "x": 0.51187,
+      "x": 0.51132,
       "y": 0.58473,
       "w": 0.03437,
       "h": 0.03388
@@ -282,17 +274,17 @@
       "id": "CARREGAMENTO_VEICULOS",
       "nome": "CARREGAMENTO_VEICULOS",
       "x": 0.21446,
-      "y": 0.40111,
+      "y": 0.3962,
       "w": 0.13998,
-      "h": 0.01771
+      "h": 0.02262
     },
     {
       "id": "CABINE_HOMECARE",
       "nome": "CABINE_HOMECARE",
-      "x": 0.79042,
-      "y": 0.4044,
-      "w": 0.00535,
-      "h": 0.01875,
+      "x": 0.78467,
+      "y": 0.39889,
+      "w": 0.01299,
+      "h": 0.03112,
       "rot": -10
     },
     {
@@ -305,27 +297,19 @@
     },
     {
       "id": "PORTA_PALETES_ACETILENO",
-      "nome": "PORTA_PALETES_ACETILENO",
+      "nome": "PALETES DE ACETILENO",
       "x": 0.29292,
-      "y": 0.4781,
-      "w": 0.10462,
-      "h": 0.00539
+      "y": 0.47255,
+      "w": 0.10489,
+      "h": 0.01119
     },
     {
       "id": "PORTA_PALETES_OXIGENIO",
       "nome": "PORTA_PALETES_OXIGENIO",
       "x": 0.40078,
-      "y": 0.47849,
+      "y": 0.47288,
       "w": 0.06227,
-      "h": 0.005
-    },
-    {
-      "id": "PALETES_ACETILENO",
-      "nome": "PALETES_ACETILENO",
-      "x": 0.29292,
-      "y": 0.46964,
-      "w": 0.09565,
-      "h": 0.00539
+      "h": 0.01116
     },
     {
       "id": "CAIXAS_GELO",
@@ -338,9 +322,9 @@
     {
       "id": "GAIOLA_GASES_ESPECIAIS",
       "nome": "GAIOLA_GASES_ESPECIAIS",
-      "x": 0.24186,
+      "x": 0.24028,
       "y": 0.55394,
-      "w": 0.00374,
+      "w": 0.00532,
       "h": 0.03388
     },
     {
@@ -354,11 +338,11 @@
     {
       "id": "GREMIO",
       "nome": "GRÊMIO",
-      "x": 0.66366,
-      "y": 0.46629,
-      "w": 0.01266,
-      "h": 0.04288,
-      "rot": 18.2
+      "x": 0.66327,
+      "y": 0.46755,
+      "w": 0.01343,
+      "h": 0.04104,
+      "rot": 19.5
     },
     {
       "id": "DEPOSITO",
@@ -416,7 +400,7 @@
       "x": 0.36467,
       "y": 0.55226,
       "w": 0.02242,
-      "h": 0.0059
+      "h": 0.00887
     },
     {
       "id": "CONFERENCIA",
@@ -431,34 +415,60 @@
       "id": "DELUGE_2",
       "nome": "DELUGE 2",
       "x": 0.19061,
-      "y": 0.71367,
-      "w": 0.01207,
-      "h": 0.00665
+      "y": 0.7024,
+      "w": 0.02161,
+      "h": 0.01792
     },
     {
       "id": "CAIXAS_DE_GELO_1",
       "nome": "CAIXAS DE GELO 1",
-      "x": 0.51434,
-      "y": 0.6573,
+      "x": 0.51422,
+      "y": 0.65729,
       "w": 0.02608,
-      "h": 0.01072,
+      "h": 0.01322,
       "rot": 8.3
     },
     {
       "id": "GELO_SECO",
       "nome": "GELO SECO",
-      "x": 0.54761,
-      "y": 0.61941,
-      "w": 0.0134,
-      "h": 0.01542
+      "x": 0.54663,
+      "y": 0.61904,
+      "w": 0.01583,
+      "h": 0.027
     },
     {
       "id": "MINIBULK",
       "nome": "MINIBULK",
-      "x": 0.18412,
-      "y": 0.39369,
-      "w": 0.00406,
-      "h": 0.01391
+      "x": 0.17917,
+      "y": 0.39055,
+      "w": 0.00901,
+      "h": 0.01705
+    },
+    {
+      "id": "PONTO_DE_ECONTRO",
+      "nome": "PONTO DE ECONTRO",
+      "x": 0.38361,
+      "y": 0.63785,
+      "w": 0.0186,
+      "h": 0.0194
+    },
+    {
+      "id": "PALETE_DO_HOMECARE",
+      "nome": "PALETE DO HOMECARE",
+      "x": 0.74348,
+      "y": 0.47782,
+      "w": 0.01869,
+      "h": 0.01828,
+      "rot": -25.7
+    },
+    {
+      "id": "DISTRIBUICAO",
+      "nome": "DISTRIBUIÇÃO",
+      "x": 0.61169,
+      "y": 0.34797,
+      "w": 0.04601,
+      "h": 0.03101,
+      "rot": 15.8
     }
   ]
 }
